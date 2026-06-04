@@ -16,11 +16,11 @@ export function KPICard({ icon, label, value, change, changeLabel, color }: KPIC
   const isPositive = change !== undefined && change >= 0;
 
   return (
-    <Card className="relative overflow-hidden min-w-0">
-      <div className="flex items-start justify-between min-w-0 gap-2">
-        <div className="space-y-1 min-w-0 overflow-hidden">
-          <p className="text-xs font-medium text-[var(--color-text-muted)] truncate">{label}</p>
-          <p className="text-2xl font-bold tabular-nums text-[var(--color-text)] truncate">{value}</p>
+    <Card className="relative overflow-hidden">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1 min-w-0 flex-1 overflow-hidden">
+          <p className="text-xs font-medium text-[var(--color-text-muted)] line-clamp-2 break-words overflow-hidden">{label}</p>
+          <p className="text-2xl font-bold tabular-nums text-[var(--color-text)] overflow-hidden">{value}</p>
           {change !== undefined && (
             <div className="flex items-center gap-1.5 text-xs">
               <span className={classNames(
