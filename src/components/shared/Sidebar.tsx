@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, PackageSearch, Users, ClipboardList, ShieldAlert,
@@ -23,6 +24,16 @@ interface SidebarProps {
 export function Sidebar({ collapsed, onToggle, onLogout }: SidebarProps) {
   console.log('[DZ-CHANGE] layout-mobile-fixed');
   console.log('[DZ-CHANGE] layout-desktop-fixed');
+
+  useEffect(() => {
+    if (!collapsed && window.innerWidth < 768) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [collapsed]);
+
   return (
     <>
       {/* Mobile backdrop */}
