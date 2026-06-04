@@ -44,6 +44,7 @@ export interface PricingResult {
   netProfit: number;
   netMargin: number;
   breakEven: number;
+  grossProfit: number;
   grossMargin: number;
   costBreakdown: CostBreakdown;
   riskScore: number;

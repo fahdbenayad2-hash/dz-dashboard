@@ -1,115 +1,92 @@
 import type { PricingInputs, PricingResult, CostBreakdown } from '@/types';
 
-/**
- * Product cost: fabric + sewing + accessories
- */
-function calculateProductCost(inputs: PricingInputs): number {
+export function calculateProductCost(inputs: PricingInputs): number {
   return inputs.fabricPricePerMeter * inputs.fabricMeters + inputs.sewingCost + inputs.accessoriesCost;
 }
 
-/**
- * Fulfillment cost: storage + packaging + shipping
- */
-function calculateFulfillmentCost(inputs: PricingInputs): number {
+export function calculateLogisticsCost(inputs: PricingInputs): number {
   return inputs.storageCost + inputs.packagingCost + inputs.shippingFee;
 }
 
-/**
- * Expected return loss per order: returnCost × cancellationRate%
- */
-function calculateReturnLoss(inputs: PricingInputs): number {
+export function calculateReturnLoss(inputs: PricingInputs): number {
   return inputs.returnCost * (inputs.cancellationRate / 100);
 }
 
-/**
- * Base cost before COD and profit: product + fulfillment + ads + return loss
- */
-function calculateBaseCost(inputs: PricingInputs): number {
-  return calculateProductCost(inputs) + calculateFulfillmentCost(inputs) + inputs.adCostPerOrder + calculateReturnLoss(inputs);
+export function calculateBaseCost(inputs: PricingInputs): number {
+  return calculateProductCost(inputs) + calculateLogisticsCost(inputs) + inputs.adCostPerOrder + calculateReturnLoss(inputs);
 }
 
-/**
- * COD fee for a given selling price
- * - percentage: price × (codValue / 100)
- * - fixed: codValue
- */
-function calculateCodFee(price: number, codType: PricingInputs['codType'], codValue: number): number {
-  return codType === 'percentage' ? price * (codValue / 100) : codValue;
+export function calculateCODRate(inputs: PricingInputs): number {
+  return inputs.codType === 'percentage' ? inputs.codValue / 100 : 0;
 }
 
-/**
- * Iterative COD convergence (4 iterations)
- * Since COD fee depends on the final price (which includes COD),
- * we iterate: price = baseCost + cod + profit, then cod = fee(price)
- * 4 iterations is enough for sub-1 DZD convergence.
- */
-function convergeCod(baseCost: number, desiredProfit: number, codType: PricingInputs['codType'], codValue: number): number {
-  let cod = 0;
-  for (let i = 0; i < 4; i++) {
-    const price = baseCost + cod + desiredProfit;
-    cod = calculateCodFee(price, codType, codValue);
+export function calculateRawPrice(baseCost: number, targetProfit: number, codRate: number, codType: PricingInputs['codType'], codValue: number): number {
+  if (codType === 'percentage' && codRate > 0) {
+    return (baseCost + targetProfit) / (1 - codRate);
   }
-  return cod;
+  return baseCost + targetProfit + codValue;
 }
 
-/**
- * Round price to nearest 1000 minus 10 (x990 pricing convention)
- * e.g. 2790 → 2990, 3120 → 3990
- */
-function toX990Price(price: number): number {
+export function calculateCOD(price: number, inputs: PricingInputs): number {
+  if (inputs.codType === 'percentage') {
+    return price * (inputs.codValue / 100);
+  }
+  return inputs.codValue;
+}
+
+export function toX990Price(price: number): number {
   return Math.ceil(price / 1000) * 1000 - 10;
 }
 
-/**
- * Minimum viable price covering all costs + desired profit (before rounding)
- */
-function calculateMinPrice(baseCost: number, codAtMinPrice: number, desiredProfit: number): number {
-  return baseCost + codAtMinPrice + desiredProfit;
+function toX990PriceAtOrAbove(price: number, minPrice: number): number {
+  const x990 = toX990Price(price);
+  return x990 >= minPrice ? x990 : toX990Price(minPrice + 1);
 }
 
-/**
- * Price tier with correct COD recalculation
- */
-function calculatePriceTier(
-  baseCost: number,
-  profitMultiplier: number,
-  desiredProfit: number,
-  codType: PricingInputs['codType'],
-  codValue: number,
-): number {
-  const profitTarget = desiredProfit * profitMultiplier;
-  const cod = convergeCod(baseCost, profitTarget, codType, codValue);
-  const rawPrice = baseCost + cod + profitTarget;
-  return toX990Price(rawPrice);
+export function calculateRecommendedPrice(baseCost: number, targetProfit: number, inputs: PricingInputs): number {
+  const codRate = calculateCODRate(inputs);
+  const rawPrice = calculateRawPrice(baseCost, targetProfit, codRate, inputs.codType, inputs.codValue);
+  const x990 = toX990Price(rawPrice);
+  const codAtX990 = calculateCOD(x990, inputs);
+  const netAtX990 = x990 - baseCost - codAtX990;
+  if (netAtX990 >= targetProfit) return x990;
+  return toX990PriceAtOrAbove(rawPrice, x990 + 1000);
+}
+
+export function calculateProfit(price: number, baseCost: number, cod: number): number {
+  return price - baseCost - cod;
+}
+
+export function calculateMargin(profit: number, price: number): number {
+  return price > 0 ? (profit / price) * 100 : 0;
 }
 
 export function calculatePricing(inputs: PricingInputs): PricingResult {
   const productCost = calculateProductCost(inputs);
-  const fulfillmentCost = calculateFulfillmentCost(inputs);
+  const logisticsCost = calculateLogisticsCost(inputs);
   const returnLoss = calculateReturnLoss(inputs);
   const baseCost = calculateBaseCost(inputs);
 
-  const codAtMinPrice = convergeCod(baseCost, inputs.desiredProfit, inputs.codType, inputs.codValue);
-  const minPrice = calculateMinPrice(baseCost, codAtMinPrice, inputs.desiredProfit);
-  const recommendedPrice = toX990Price(minPrice);
+  const minPrice = calculateRawPrice(baseCost, 0, calculateCODRate(inputs), inputs.codType, inputs.codValue);
+  const recommendedPrice = calculateRecommendedPrice(baseCost, inputs.desiredProfit, inputs);
+  const aggressivePrice = calculateRecommendedPrice(baseCost, inputs.desiredProfit * 0.7, inputs);
+  const premiumPrice = calculateRecommendedPrice(baseCost, inputs.desiredProfit * 1.5, inputs);
 
-  const codAtRecommended = calculateCodFee(recommendedPrice, inputs.codType, inputs.codValue);
-  const aggressivePrice = calculatePriceTier(baseCost, 0.7, inputs.desiredProfit, inputs.codType, inputs.codValue);
-  const premiumPrice = calculatePriceTier(baseCost, 1.5, inputs.desiredProfit, inputs.codType, inputs.codValue);
+  const cod = calculateCOD(recommendedPrice, inputs);
+  const netProfit = calculateProfit(recommendedPrice, baseCost, cod);
+  const netMargin = calculateMargin(netProfit, recommendedPrice);
+  const grossProfit = recommendedPrice - productCost;
+  const grossMargin = calculateMargin(grossProfit, recommendedPrice);
+  const breakEven = baseCost + cod;
 
-  const netProfit = recommendedPrice - baseCost - codAtRecommended;
-  const netMargin = (netProfit / recommendedPrice) * 100;
-  const breakEven = baseCost + codAtRecommended;
-  const grossMargin = ((recommendedPrice - productCost) / recommendedPrice) * 100;
-
-  const totalBreakdown = productCost + fulfillmentCost + inputs.adCostPerOrder + returnLoss + codAtRecommended + netProfit;
+  const totalBreakdown = productCost + logisticsCost + inputs.adCostPerOrder + returnLoss + cod + netProfit;
 
   const costBreakdown: CostBreakdown = {
     product: { value: productCost, percentage: totalBreakdown > 0 ? (productCost / totalBreakdown) * 100 : 0 },
-    logistics: { value: fulfillmentCost, percentage: totalBreakdown > 0 ? (fulfillmentCost / totalBreakdown) * 100 : 0 },
+    logistics: { value: logisticsCost, percentage: totalBreakdown > 0 ? (logisticsCost / totalBreakdown) * 100 : 0 },
     ads: { value: inputs.adCostPerOrder, percentage: totalBreakdown > 0 ? (inputs.adCostPerOrder / totalBreakdown) * 100 : 0 },
     returns: { value: returnLoss, percentage: totalBreakdown > 0 ? (returnLoss / totalBreakdown) * 100 : 0 },
-    cod: { value: codAtRecommended, percentage: totalBreakdown > 0 ? (codAtRecommended / totalBreakdown) * 100 : 0 },
+    cod: { value: cod, percentage: totalBreakdown > 0 ? (cod / totalBreakdown) * 100 : 0 },
     profit: { value: netProfit, percentage: totalBreakdown > 0 ? (netProfit / totalBreakdown) * 100 : 0 },
   };
 
@@ -118,9 +95,9 @@ export function calculatePricing(inputs: PricingInputs): PricingResult {
   const riskColor = riskScore >= 80 ? '#1D9E75' : riskScore >= 50 ? '#EF9F27' : '#E24B4A';
 
   return {
-    productCost, fulfillmentCost, returnLoss, baseCost,
-    cod: codAtRecommended, minPrice, recommendedPrice, aggressivePrice, premiumPrice,
-    netProfit, netMargin, breakEven, grossMargin,
+    productCost, fulfillmentCost: logisticsCost, returnLoss, baseCost,
+    cod, minPrice, recommendedPrice, aggressivePrice, premiumPrice,
+    netProfit, netMargin, breakEven, grossProfit, grossMargin,
     costBreakdown, riskScore, riskLevel, riskColor,
   };
 }

@@ -273,6 +273,27 @@ export function Products({ orders }: { orders: Order[] }) {
           </Card>
         </div>
 
+        {/* Audit Card */}
+        <Card>
+          <CardHeader><CardTitle>تدقيق التكاليف</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {[
+              { label: 'التكلفة الأساسية', value: result.baseCost, color: 'var(--color-text)' },
+              { label: 'رسوم COD', value: result.cod, color: '#7F77DD' },
+              { label: 'إجمالي الربح', value: result.grossProfit, color: 'var(--color-success)' },
+              { label: 'صافي الربح', value: result.netProfit, color: 'var(--color-primary)' },
+              { label: 'هامش الربح', value: null, pct: result.netMargin, color: 'var(--color-warning)' },
+            ].map(item => (
+              <div key={item.label} className="flex items-center justify-between rounded-lg bg-gray-50 dark:bg-gray-800/50 p-3">
+                <span className="text-xs text-[var(--color-text-muted)]">{item.label}</span>
+                <span className="text-sm font-bold tabular-nums" style={{ color: item.color }}>
+                  {item.value != null ? formatCurrency(Math.round(item.value)) : formatPercent(item.pct!)}
+                </span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
         {/* Cost Breakdown Bar */}
         <Card>
           <CardHeader><CardTitle>توزيع التكاليف</CardTitle></CardHeader>

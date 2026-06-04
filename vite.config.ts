@@ -5,6 +5,7 @@ import path from 'path'
 
 export default defineConfig({
   base: './',
+  build: { chunkSizeWarningLimit: 1000 },
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
