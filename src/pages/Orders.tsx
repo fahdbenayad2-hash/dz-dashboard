@@ -114,41 +114,43 @@ export function Orders({ orders }: { orders: Order[] }) {
           </div>
 
           {/* Table */}
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <SortHeader label="رقم الطلب" field="id" />
-                <TableHead>التاريخ</TableHead>
-                <SortHeader label="العميل" field="customer" />
-                <TableHead>الهاتف</TableHead>
-                <SortHeader label="الولاية" field="wilaya" />
-                <SortHeader label="الحالة" field="status" />
-                <SortHeader label="المنتج" field="product" />
-                <SortHeader label="الإجمالي" field="total" />
-                <SortHeader label="رسوم الشحن" field="delivery" />
-                <SortHeader label="الوكيل" field="agent" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pagedOrders.map(o => (
-                <TableRow key={o.id} className="cursor-pointer" onClick={() => setSelectedOrder(o)}>
-                  <TableCell className="tabular-nums font-medium">{o.id}</TableCell>
-                  <TableCell className="text-xs text-[var(--color-text-muted)]">{o.date}</TableCell>
-                  <TableCell>{o.customer}</TableCell>
-                  <TableCell dir="ltr" className="text-xs">{o.phone}</TableCell>
-                  <TableCell>{o.wilaya}</TableCell>
-                  <TableCell><StatusBadge status={o.status} /></TableCell>
-                  <TableCell className="max-w-40 truncate">{o.product}</TableCell>
-                  <TableCell className="tabular-nums">{formatCurrency(o.total)}</TableCell>
-                  <TableCell className="tabular-nums">{formatCurrency(o.delivery)}</TableCell>
-                  <TableCell>{o.agent}</TableCell>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <SortHeader label="رقم الطلب" field="id" />
+                  <TableHead>التاريخ</TableHead>
+                  <SortHeader label="العميل" field="customer" />
+                  <TableHead>الهاتف</TableHead>
+                  <SortHeader label="الولاية" field="wilaya" />
+                  <SortHeader label="الحالة" field="status" />
+                  <SortHeader label="المنتج" field="product" />
+                  <SortHeader label="الإجمالي" field="total" />
+                  <SortHeader label="رسوم الشحن" field="delivery" />
+                  <SortHeader label="الوكيل" field="agent" />
                 </TableRow>
-              ))}
-              {pagedOrders.length === 0 && (
-                <TableRow><TableCell colSpan={10} className="text-center text-[var(--color-text-muted)] py-8">لا توجد طلبات</TableCell></TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {pagedOrders.map(o => (
+                  <TableRow key={o.id} className="cursor-pointer" onClick={() => setSelectedOrder(o)}>
+                    <TableCell className="tabular-nums font-medium">{o.id}</TableCell>
+                    <TableCell className="text-xs text-[var(--color-text-muted)]">{o.date}</TableCell>
+                    <TableCell>{o.customer}</TableCell>
+                    <TableCell dir="ltr" className="text-xs">{o.phone}</TableCell>
+                    <TableCell>{o.wilaya}</TableCell>
+                    <TableCell><StatusBadge status={o.status} /></TableCell>
+                    <TableCell className="max-w-40 truncate">{o.product}</TableCell>
+                    <TableCell className="tabular-nums">{formatCurrency(o.total)}</TableCell>
+                    <TableCell className="tabular-nums">{formatCurrency(o.delivery)}</TableCell>
+                    <TableCell>{o.agent}</TableCell>
+                  </TableRow>
+                ))}
+                {pagedOrders.length === 0 && (
+                  <TableRow><TableCell colSpan={10} className="text-center text-[var(--color-text-muted)] py-8">لا توجد طلبات</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
 
           {/* Pagination */}
           {totalPages > 1 && (

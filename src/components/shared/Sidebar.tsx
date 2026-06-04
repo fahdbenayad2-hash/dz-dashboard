@@ -21,6 +21,8 @@ interface SidebarProps {
 }
 
 export function Sidebar({ collapsed, onToggle, onLogout }: SidebarProps) {
+  console.log('[DZ-CHANGE] layout-mobile-fixed');
+  console.log('[DZ-CHANGE] layout-desktop-fixed');
   return (
     <>
       {/* Mobile backdrop */}
@@ -33,11 +35,11 @@ export function Sidebar({ collapsed, onToggle, onLogout }: SidebarProps) {
       <aside
         dir="rtl"
         className={classNames(
-          'fixed right-0 top-0 z-40 h-screen bg-[var(--color-sidebar)] border-l border-[var(--color-border)] flex flex-col',
-          // Mobile: slide drawer in/out
+          'fixed right-0 top-0 z-40 h-screen bg-[var(--color-sidebar)] border-l border-[var(--color-border)] flex flex-col w-64',
+          // Mobile: slide drawer in/out using explicit w-64 width
           'transition-transform duration-300 ease-in-out',
           collapsed ? 'translate-x-full' : 'translate-x-0',
-          // Desktop: normal width-based layout
+          // Desktop: always visible, animate width only
           'md:translate-x-0 md:transition-[width] md:duration-300',
           collapsed ? 'md:w-16' : 'md:w-64',
         )}

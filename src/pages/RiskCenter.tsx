@@ -110,18 +110,19 @@ export function RiskCenter({ orders }: { orders: Order[] }) {
       <Card>
         <CardHeader><CardTitle>مصفوفة مخاطر المنتجات</CardTitle></CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>المنتج</TableHead>
-                <TableHead>درجة المخاطرة</TableHead>
-                <TableHead>المستوى</TableHead>
-                <TableHead>معدل الإلغاء</TableHead>
-                <TableHead>هامش الربح</TableHead>
-                <TableHead>نسبة CPA</TableHead>
-                <TableHead>الإجراء</TableHead>
-              </TableRow>
-            </TableHeader>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>المنتج</TableHead>
+                  <TableHead>درجة المخاطرة</TableHead>
+                  <TableHead>المستوى</TableHead>
+                  <TableHead>معدل الإلغاء</TableHead>
+                  <TableHead>هامش الربح</TableHead>
+                  <TableHead>نسبة CPA</TableHead>
+                  <TableHead>الإجراء</TableHead>
+                </TableRow>
+              </TableHeader>
             <TableBody>
               {productRiskData.map(p => {
                 const isSelected = selectedProduct === p.name;
@@ -173,6 +174,7 @@ export function RiskCenter({ orders }: { orders: Order[] }) {
               )}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
 

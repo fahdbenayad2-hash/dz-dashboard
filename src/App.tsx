@@ -62,6 +62,8 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
   const { orders, loading, error, lastUpdated, refresh } = useSheetData();
 
   console.log('[DZ-CHANGE] responsive-layout-loaded');
+  console.log('[DZ-CHANGE] layout-desktop-fixed');
+  console.log('[DZ-CHANGE] layout-mobile-fixed');
 
   if (loading) {
     return (
@@ -108,7 +110,7 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
             loading={loading}
             onToggleSidebar={() => setSidebarCollapsed(c => !c)}
           />
-          <main className="flex-1 p-6 overflow-auto">
+          <main className="flex-1 p-6 overflow-x-hidden">
             <Routes>
               <Route path="/" element={<ProtectedRoute><Dashboard orders={orders} /></ProtectedRoute>} />
               <Route path="/products" element={<ProtectedRoute><Products orders={orders} /></ProtectedRoute>} />

@@ -95,58 +95,60 @@ export function Agents({ orders }: { orders: Order[] }) {
       <Card>
         <CardHeader><CardTitle>ترتيب الوكلاء</CardTitle></CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>الوكيل</TableHead>
-                <TableHead>إجمالي الطلبات</TableHead>
-                <TableHead>المؤكدة</TableHead>
-                <TableHead>الفاشلة</TableHead>
-                <TableHead>معدل الإلغاء</TableHead>
-                <TableHead>الإيراد</TableHead>
-                <TableHead>متوسط الطلب</TableHead>
-                <TableHead>الأداء</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {agents.map(a => {
-                const cfg = badgeConfig[a.badge];
-                const Icon = cfg.icon;
-                return (
-                  <TableRow
-                    key={a.name}
-                    className={`cursor-pointer ${selectedAgent === a.name ? 'bg-[var(--color-primary)]/5' : ''}`}
-                    onClick={() => setSelectedAgent(a.name)}
-                  >
-                    <TableCell className="font-medium">{a.name}</TableCell>
-                    <TableCell className="tabular-nums">{formatNumber(a.totalOrders)}</TableCell>
-                    <TableCell className="tabular-nums text-[var(--color-success)]">{formatNumber(a.confirmedOrders)}</TableCell>
-                    <TableCell className="tabular-nums text-[var(--color-danger)]">{formatNumber(a.failedOrders)}</TableCell>
-                    <TableCell>
-                      <span className={`tabular-nums font-medium ${
-                        a.cancellationRate > 40 ? 'text-[var(--color-danger)]' :
-                        a.cancellationRate > 30 ? 'text-[var(--color-warning)]' :
-                        'text-[var(--color-success)]'
-                      }`}>
-                        {formatPercent(a.cancellationRate)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="tabular-nums">{formatCurrency(a.totalRevenue)}</TableCell>
-                    <TableCell className="tabular-nums">{formatCurrency(a.avgOrderValue)}</TableCell>
-                    <TableCell>
-                      <span className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: cfg.color }}>
-                        <Icon className="h-3.5 w-3.5" />
-                        {cfg.label}
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {agents.length === 0 && (
-                <TableRow><TableCell colSpan={8} className="text-center text-[var(--color-text-muted)] py-8">لا يوجد وكلاء</TableCell></TableRow>
-              )}
-            </TableBody>
-          </Table>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>الوكيل</TableHead>
+                  <TableHead>إجمالي الطلبات</TableHead>
+                  <TableHead>المؤكدة</TableHead>
+                  <TableHead>الفاشلة</TableHead>
+                  <TableHead>معدل الإلغاء</TableHead>
+                  <TableHead>الإيراد</TableHead>
+                  <TableHead>متوسط الطلب</TableHead>
+                  <TableHead>الأداء</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {agents.map(a => {
+                  const cfg = badgeConfig[a.badge];
+                  const Icon = cfg.icon;
+                  return (
+                    <TableRow
+                      key={a.name}
+                      className={`cursor-pointer ${selectedAgent === a.name ? 'bg-[var(--color-primary)]/5' : ''}`}
+                      onClick={() => setSelectedAgent(a.name)}
+                    >
+                      <TableCell className="font-medium">{a.name}</TableCell>
+                      <TableCell className="tabular-nums">{formatNumber(a.totalOrders)}</TableCell>
+                      <TableCell className="tabular-nums text-[var(--color-success)]">{formatNumber(a.confirmedOrders)}</TableCell>
+                      <TableCell className="tabular-nums text-[var(--color-danger)]">{formatNumber(a.failedOrders)}</TableCell>
+                      <TableCell>
+                        <span className={`tabular-nums font-medium ${
+                          a.cancellationRate > 40 ? 'text-[var(--color-danger)]' :
+                          a.cancellationRate > 30 ? 'text-[var(--color-warning)]' :
+                          'text-[var(--color-success)]'
+                        }`}>
+                          {formatPercent(a.cancellationRate)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="tabular-nums">{formatCurrency(a.totalRevenue)}</TableCell>
+                      <TableCell className="tabular-nums">{formatCurrency(a.avgOrderValue)}</TableCell>
+                      <TableCell>
+                        <span className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: cfg.color }}>
+                          <Icon className="h-3.5 w-3.5" />
+                          {cfg.label}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {agents.length === 0 && (
+                  <TableRow><TableCell colSpan={8} className="text-center text-[var(--color-text-muted)] py-8">لا يوجد وكلاء</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -202,21 +204,22 @@ export function Agents({ orders }: { orders: Order[] }) {
           <Card>
             <CardHeader><CardTitle>آخر طلبات {selectedAgent}</CardTitle></CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>رقم الطلب</TableHead>
-                    <TableHead>العميل</TableHead>
-                    <TableHead>الولاية</TableHead>
-                    <TableHead>المنتج</TableHead>
-                    <TableHead>الإجمالي</TableHead>
-                    <TableHead>الحالة</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {agentOrders.slice(0, 10).map(o => (
-                    <TableRow key={o.id}>
-                      <TableCell className="tabular-nums">{o.id}</TableCell>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>رقم الطلب</TableHead>
+                      <TableHead>العميل</TableHead>
+                      <TableHead>الولاية</TableHead>
+                      <TableHead>المنتج</TableHead>
+                      <TableHead>الإجمالي</TableHead>
+                      <TableHead>الحالة</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {agentOrders.slice(0, 10).map(o => (
+                      <TableRow key={o.id}>
+                        <TableCell className="tabular-nums">{o.id}</TableCell>
                       <TableCell>{o.customer}</TableCell>
                       <TableCell>{o.wilaya}</TableCell>
                       <TableCell className="max-w-48 truncate">{o.product}</TableCell>
@@ -226,6 +229,7 @@ export function Agents({ orders }: { orders: Order[] }) {
                   ))}
                 </TableBody>
               </Table>
+            </div>
             </CardContent>
           </Card>
         </div>

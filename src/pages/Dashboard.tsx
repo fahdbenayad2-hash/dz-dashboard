@@ -205,41 +205,43 @@ export function Dashboard({ orders }: { orders: Order[] }) {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>رقم الطلب</TableHead>
-                <TableHead>العميل</TableHead>
-                <TableHead>الولاية</TableHead>
-                <TableHead>المنتج</TableHead>
-                <TableHead>الإجمالي</TableHead>
-                <TableHead>رسوم الشحن</TableHead>
-                <TableHead>الحالة</TableHead>
-                <TableHead>الوكيل</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pagedOrders.map(o => (
-                <TableRow key={o.id}>
-                  <TableCell className="font-medium tabular-nums">{o.id}</TableCell>
-                  <TableCell>{o.customer}</TableCell>
-                  <TableCell>{o.wilaya}</TableCell>
-                  <TableCell className="max-w-40 truncate">{o.product}</TableCell>
-                  <TableCell className="tabular-nums">{formatCurrency(o.total)}</TableCell>
-                  <TableCell className="tabular-nums">{formatCurrency(o.delivery)}</TableCell>
-                  <TableCell><StatusBadge status={o.status} /></TableCell>
-                  <TableCell>{o.agent}</TableCell>
-                </TableRow>
-              ))}
-              {pagedOrders.length === 0 && (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-[var(--color-text-muted)] py-8">
-                    لا توجد طلبات
-                  </TableCell>
+                  <TableHead>رقم الطلب</TableHead>
+                  <TableHead>العميل</TableHead>
+                  <TableHead>الولاية</TableHead>
+                  <TableHead>المنتج</TableHead>
+                  <TableHead>الإجمالي</TableHead>
+                  <TableHead>رسوم الشحن</TableHead>
+                  <TableHead>الحالة</TableHead>
+                  <TableHead>الوكيل</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {pagedOrders.map(o => (
+                  <TableRow key={o.id}>
+                    <TableCell className="font-medium tabular-nums">{o.id}</TableCell>
+                    <TableCell>{o.customer}</TableCell>
+                    <TableCell>{o.wilaya}</TableCell>
+                    <TableCell className="max-w-40 truncate">{o.product}</TableCell>
+                    <TableCell className="tabular-nums">{formatCurrency(o.total)}</TableCell>
+                    <TableCell className="tabular-nums">{formatCurrency(o.delivery)}</TableCell>
+                    <TableCell><StatusBadge status={o.status} /></TableCell>
+                    <TableCell>{o.agent}</TableCell>
+                  </TableRow>
+                ))}
+                {pagedOrders.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-[var(--color-text-muted)] py-8">
+                      لا توجد طلبات
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
           {totalPages > 1 && (
             <div className="flex items-center justify-between mt-4 pt-4 border-t border-[var(--color-border)]">
               <span className="text-sm text-[var(--color-text-muted)]">

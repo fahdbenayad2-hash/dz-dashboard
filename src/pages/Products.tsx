@@ -44,9 +44,9 @@ export function Products({ orders }: { orders: Order[] }) {
   };
 
   return (
-    <div className="flex gap-6 h-[calc(100vh-7rem)]">
+    <div className="flex flex-col lg:flex-row gap-6 min-h-0">
       {/* Left Panel - Product List */}
-      <div className="w-72 shrink-0 overflow-y-auto space-y-3">
+      <div className="w-full lg:w-72 shrink-0 overflow-y-auto space-y-3 max-h-48 lg:max-h-none">
         <Card>
           <CardHeader><CardTitle>المنتجات</CardTitle></CardHeader>
           <CardContent className="space-y-2">
@@ -60,7 +60,7 @@ export function Products({ orders }: { orders: Order[] }) {
                     : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'
                 }`}
               >
-                <p className="font-medium text-[var(--color-text)] truncate">{p.name}</p>
+                <p className="font-medium text-[var(--color-text)] break-words text-wrap">{p.name}</p>
                 <div className="flex justify-between mt-1 text-xs text-[var(--color-text-muted)]">
                   <span>{p.orders} طلب</span>
                   <span>{formatCurrency(p.revenue)}</span>
@@ -77,7 +77,7 @@ export function Products({ orders }: { orders: Order[] }) {
       </div>
 
       {/* Right Panel - Pricing Calculator */}
-      <div className="flex-1 overflow-y-auto space-y-6">
+      <div className="flex-1 min-w-0 overflow-x-hidden space-y-6">
         {/* Hero Card */}
         <Card className="bg-gradient-to-br from-[var(--color-primary)] to-blue-700 text-white border-none">
           <CardContent className="py-8">
