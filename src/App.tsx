@@ -12,6 +12,7 @@ import { RiskCenter } from '@/pages/RiskCenter';
 import { MonthlyReport } from '@/pages/MonthlyReport';
 import { useSheetData } from '@/hooks/useSheetData';
 import { isAuthenticated, logout } from '@/lib/auth';
+import { classNames } from '@/lib/utils';
 import { Loader2 } from 'lucide-react';
 
 export default function App() {
@@ -60,6 +61,8 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
 }) {
   const { orders, loading, error, lastUpdated, refresh } = useSheetData();
 
+  console.log('[DZ-CHANGE] responsive-layout-loaded');
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-[var(--color-bg)]">
@@ -92,8 +95,10 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
       <div dir="rtl" className="flex min-h-screen bg-[var(--color-bg)]">
         <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(c => !c)} onLogout={onLogout} />
         <div
-          className="flex-1 flex flex-col transition-all duration-300"
-          style={{ marginRight: sidebarCollapsed ? '4rem' : '16rem' }}
+          className={classNames(
+            'flex-1 flex flex-col min-w-0 overflow-x-hidden transition-all duration-300',
+            sidebarCollapsed ? 'md:mr-16' : 'md:mr-64',
+          )}
         >
           <TopBar
             dark={dark}
@@ -101,6 +106,7 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
             lastUpdated={lastUpdated}
             onRefresh={refresh}
             loading={loading}
+            onToggleSidebar={() => setSidebarCollapsed(c => !c)}
           />
           <main className="flex-1 p-6 overflow-auto">
             <Routes>
