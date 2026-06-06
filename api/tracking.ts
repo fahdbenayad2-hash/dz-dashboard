@@ -1,9 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// Force Vercel to never cache this function
-export const config = {
-  runtime: 'nodejs20.x',
-};
+export const config = { runtime: 'nodejs20.x' };
 
 const BASE_URL = 'https://femmesoir.leaderscod.com';
 const TOKEN = process.env.OCTOMATIC_TOKEN!;
@@ -21,15 +18,15 @@ function setNoCacheHeaders(res: VercelResponse) {
 
 async function fetchAllPages() {
   let allData: unknown[] = [];
-  const limit = 500;
-  let page = 1;
+  const limit = 70;
+  let offset = 0;
   let totalPages = 0;
   let totalCount: number | null = null;
   const ts = Date.now();
 
   while (true) {
-    const url = `${BASE_URL}/tenants/api/tracking-order?limit=${limit}&page=${page}&_=${ts}`;
-    console.log('[DZ-PROXY] tracking page=' + page + ' url=' + url);
+    const url = `${BASE_URL}/tenants/api/tracking-order?offset=${offset}&limit=${limit}&_=${ts}`;
+    console.log('[DZ-PROXY] tracking offset=' + offset + ' url=' + url);
     const res = await fetch(url, {
       headers: {
         'Authorization': TOKEN,
@@ -42,30 +39,33 @@ async function fetchAllPages() {
       },
     });
     if (!res.ok) {
-      console.log('[DZ-PROXY] tracking page=' + page + ' http=' + res.status + ' ' + res.statusText);
+      console.log('[DZ-PROXY] tracking offset=' + offset + ' http=' + res.status + ' ' + res.statusText);
       const text = await res.text();
       console.log('[DZ-PROXY] tracking error body=' + text.slice(0, 500));
-      if (res.status === 304) {
-        console.log('[DZ-PROXY] tracking page=' + page + ' GOT 304 despite no-cache headers — Octomatic API internal cache');
-      }
+      if (res.status === 304) console.log('[DZ-PROXY] tracking GOT 304 despite no-cache');
       break;
     }
     const json = await res.json();
-    if (page === 1) {
+    if (offset === 0) {
       totalCount = json.all_count ? Number(json.all_count) : null;
-      const firstKeys = json.records?.[0] ? Object.keys(json.records[0]).join(',') : 'no_records';
-      console.log('[DZ-PROXY] tracking page=1 keys=' + Object.keys(json).join(',') + ' all_count=' + totalCount + ' records_len=' + (json.records ? json.records.length : 'no_records_key') + ' first_record_keys=' + firstKeys);
+      const firstKeys = json.data?.[0] ? Object.keys(json.data[0]).join(',') : 'no_data';
+      console.log('[DZ-PROXY] tracking offset=0 keys=' + Object.keys(json).join(',') + ' all_count=' + totalCount + ' data_len=' + (json.data ? json.data.length : 'no_data_key') + ' first_record_keys=' + firstKeys);
     }
-    if (!json.records) {
-      console.log('[DZ-PROXY] tracking page=' + page + ' no records key, keys=' + Object.keys(json).join(','));
+    if (!json.data) {
+      console.log('[DZ-PROXY] tracking offset=' + offset + ' no data key, keys=' + Object.keys(json).join(','));
       break;
     }
-    console.log('[DZ-PROXY] tracking page=' + page + ' rows=' + json.records.length + ' totalSoFar=' + allData.length + '/' + totalCount);
-    if (json.records.length === 0) break;
-    allData = [...allData, ...json.records];
+    console.log('[DZ-PROXY] tracking offset=' + offset + ' rows=' + json.data.length + ' totalSoFar=' + allData.length + '/' + totalCount);
+    if (json.data.length === 0) break;
+    allData = [...allData, ...json.data];
     totalPages++;
-    page += 1;
-    if (json.records.length < limit) break;
+    offset += 1;
+    // Use all_count formula from working script: (offset) * limit >= all_count → done
+    if (totalCount !== null && (offset * limit) >= totalCount) {
+      console.log('[DZ-PROXY] tracking reached all_count=' + totalCount + ' at offset=' + offset);
+      break;
+    }
+    if (json.data.length < limit) break;
   }
 
   console.log('[DZ-PROXY] tracking done: totalPages=' + totalPages + ' totalRows=' + allData.length + ' all_count=' + totalCount);
