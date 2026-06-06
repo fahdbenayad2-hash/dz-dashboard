@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ShoppingBag, DollarSign, CheckCircle, XCircle, BarChart3, Wallet, AlarmClock, Package } from 'lucide-react';
+import { DollarSign, CheckCircle, XCircle, BarChart3, Wallet, AlarmClock, Timer, Package } from 'lucide-react';
 import type { Order, TrackingOrder } from '@/types';
 import { KPICard } from '@/components/shared/KPICard';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -80,7 +80,7 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
     <div className="space-y-6">
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        <KPICard icon={<ShoppingBag className="h-5 w-5" />} label="إجمالي الطلبات (مؤكدة)" value={formatNumber(data.total)} change={0} />
+        <KPICard icon={<Package className="h-5 w-5" />} label="إجمالي الطلبات (مؤكدة)" value={formatNumber(data.total)} change={0} />
         <KPICard icon={<DollarSign className="h-5 w-5" />} label="إجمالي الإيراد" value={formatCurrency(data.totalRevenue)} change={2.3} color="#1D9E75" />
         <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم التوصيل" value={formatNumber(data.delivered)} change={1.1} color="#1D9E75" />
         <KPICard icon={<XCircle className="h-5 w-5" />} label="المرتجعات" value={formatNumber(data.returned)} change={-0.5} color="#E24B4A" />
@@ -93,7 +93,7 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
         <KPICard icon={<Package className="h-5 w-5" />} label="قيد التوصيل" value={formatNumber(data.inTransit + data.inDelivery)} color="#EF9F27" />
         <KPICard icon={<CheckCircle className="h-5 w-5" />} label="معدل التوصيل" value={data.deliveryRate.toFixed(1) + '%'} color="#1D9E75" />
         <KPICard icon={<XCircle className="h-5 w-5" />} label="معدل الإرجاع" value={data.returnRate.toFixed(1) + '%'} color="#E24B4A" />
-        <KPICard icon={<ShoppingBag className="h-5 w-5" />} label="معلق (غير مؤكد)" value={formatNumber(data.pendingOrders)} color="#7F77DD" />
+        <KPICard icon={<Timer className="h-5 w-5" />} label="معلق (غير مؤكد)" value={formatNumber(data.pendingOrders)} color="#7F77DD" />
       </div>
 
       {/* Charts Row 1 */}

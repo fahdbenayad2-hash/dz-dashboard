@@ -16,11 +16,11 @@ export function KPICard({ icon, label, value, change, changeLabel, color }: KPIC
   const isPositive = change !== undefined && change >= 0;
 
   return (
-    <Card className="relative overflow-hidden">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1 min-w-0 flex-1 overflow-hidden">
-          <p className="text-xs font-medium text-[var(--color-text-muted)] line-clamp-2 break-words overflow-hidden">{label}</p>
-          <p className="text-2xl font-bold tabular-nums text-[var(--color-text)] overflow-hidden">{value}</p>
+    <Card className="relative">
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1.5 min-w-0 flex-1 overflow-hidden">
+          <p className="text-xs font-medium text-[var(--color-text-muted)] line-clamp-2 break-words">{label}</p>
+          <p className="text-lg md:text-xl xl:text-2xl font-bold tabular-nums text-[var(--color-text)] whitespace-nowrap">{value}</p>
           {change !== undefined && (
             <div className="flex items-center gap-1.5 text-xs">
               <span className={classNames(
@@ -37,10 +37,10 @@ export function KPICard({ icon, label, value, change, changeLabel, color }: KPIC
           )}
         </div>
         <div
-          className="rounded-lg p-3 shrink-0"
+          className="rounded-xl p-3.5 shrink-0"
           style={{ backgroundColor: color ? `${color}15` : 'var(--color-primary)' }}
         >
-          <div style={{ color: color || 'var(--color-primary)' }}>
+          <div className="flex items-center justify-center" style={{ color: color || 'var(--color-primary)' }}>
             {icon}
           </div>
         </div>
