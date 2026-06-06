@@ -65,7 +65,8 @@ export async function fetchTracking(): Promise<TrackingOrder[]> {
       const orderId = String(cells[0]?.v || '');
       if (!orderId) return acc;
       const rawStatus = String(cells[5]?.v || '');
-      const rawDate = cells[1]?.v ? String(cells[1].v) : null;
+      const rawDate = String(cells[1]?.f || cells[1]?.v || '');
+      console.log('[DZ-DATE] Tracking raw date:', rawDate, '| f:', cells[1]?.f, '| v:', cells[1]?.v);
       const parsedDate = rawDate ? new Date(rawDate) : null;
       const date = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null;
       acc.push({
