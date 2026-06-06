@@ -6,9 +6,10 @@ const X_AUTH = process.env.OCTOMATIC_X_AUTH!;
 
 async function fetchAllPages() {
   let allData: unknown[] = [];
-  const limit = 100;
+  const limit = 70;
   let page = 0;
   let totalPages = 0;
+  let totalCount: number | null = null;
 
   while (true) {
     const url = `${BASE_URL}/tenants/api/tracking-order?limit=${limit}&page=${page}`;
@@ -18,6 +19,8 @@ async function fetchAllPages() {
         'Authorization': TOKEN,
         'x-authorization': X_AUTH,
         'lang': 'ar',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
       },
     });
     if (!res.ok) {
@@ -27,19 +30,24 @@ async function fetchAllPages() {
       break;
     }
     const json = await res.json();
+    if (page === 0) {
+      console.log('[DZ-PROXY] tracking page=0 keys=' + Object.keys(json).join(',') + ' all_count=' + json.all_count);
+      totalCount = json.all_count ? Number(json.all_count) : null;
+    }
     if (!json.data) {
-      console.log('[DZ-PROXY] tracking page=' + page + ' no data key in response, keys=' + Object.keys(json).join(','));
+      console.log('[DZ-PROXY] tracking page=' + page + ' no data key, keys=' + Object.keys(json).join(','));
       break;
     }
     console.log('[DZ-PROXY] tracking page=' + page + ' rows=' + json.data.length);
     if (json.data.length === 0) break;
     allData = [...allData, ...json.data];
     totalPages++;
-    if (json.data.length < limit) break;
     page += 1;
+    if (totalCount !== null && allData.length >= totalCount) break;
+    if (json.data.length < limit) break;
   }
 
-  console.log('[DZ-PROXY] tracking done: totalPages=' + totalPages + ' totalRows=' + allData.length);
+  console.log('[DZ-PROXY] tracking done: totalPages=' + totalPages + ' totalRows=' + allData.length + ' totalCount=' + totalCount);
   return allData;
 }
 
@@ -47,6 +55,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
   try {
     const data = await fetchAllPages();
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-store');
     res.json({ data });
   } catch (err) {
     console.log('[DZ-PROXY] tracking fatal=' + String(err));
