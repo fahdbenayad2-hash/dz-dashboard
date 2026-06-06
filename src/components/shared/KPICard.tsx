@@ -14,13 +14,17 @@ interface KPICardProps {
 
 export function KPICard({ icon, label, value, change, changeLabel, color }: KPICardProps) {
   const isPositive = change !== undefined && change >= 0;
+  const digits = (value.match(/\d/g) || []).length;
+  const valueSize = digits <= 6
+    ? 'text-lg sm:text-xl lg:text-2xl'
+    : 'text-sm sm:text-base lg:text-lg';
 
   return (
     <Card className="relative">
       <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1.5 min-w-0 flex-1 overflow-hidden">
+        <div className="space-y-1.5 min-w-0 flex-1">
           <p className="text-xs font-medium text-[var(--color-text-muted)] line-clamp-2 break-words">{label}</p>
-          <p className="text-lg md:text-xl xl:text-2xl font-bold tabular-nums text-[var(--color-text)] whitespace-nowrap">{value}</p>
+          <p className={`${valueSize} font-bold tabular-nums text-[var(--color-text)]`} title={value}>{value}</p>
           {change !== undefined && (
             <div className="flex items-center gap-1.5 text-xs">
               <span className={classNames(

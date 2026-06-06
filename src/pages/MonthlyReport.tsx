@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ShoppingCart, DollarSign, CheckCircle, XCircle, BarChart3, TrendingUp, Clock, Truck } from 'lucide-react';
+import { Package, DollarSign, CheckCircle, XCircle, BarChart3, TrendingUp, Timer, CalendarDays } from 'lucide-react';
 import type { Order, TrackingOrder } from '@/types';
 import { KPICard } from '@/components/shared/KPICard';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -73,17 +73,17 @@ export function MonthlyReport({ orders, trackingOrders }: { orders: Order[]; tra
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Clock className="h-6 w-6 text-[var(--color-primary)]" />
+        <CalendarDays className="h-6 w-6 text-[var(--color-primary)]" />
         <h1 className="text-xl font-bold text-[var(--color-text)]">تقرير الشهر الأخير</h1>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-        <KPICard icon={<ShoppingCart className="h-5 w-5" />} label="إجمالي الطلبات" value={formatNumber(r.metrics.total)} />
+        <KPICard icon={<Package className="h-5 w-5" />} label="إجمالي الطلبات" value={formatNumber(r.metrics.total)} />
         <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم التوصيل" value={formatNumber(r.metrics.delivered)} color="#1D9E75" />
         <KPICard icon={<XCircle className="h-5 w-5" />} label="المرتجعات" value={formatNumber(r.metrics.returned)} color="#E24B4A" />
-        <KPICard icon={<Truck className="h-5 w-5" />} label="قيد التوصيل" value={formatNumber(r.metrics.inTransit)} color="#EF9F27" />
-        <KPICard icon={<Clock className="h-5 w-5" />} label="معلق (غير مؤكد)" value={formatNumber(r.pendingCount)} color="#7F77DD" />
+        <KPICard icon={<Package className="h-5 w-5" />} label="قيد التوصيل" value={formatNumber(r.metrics.inTransit)} color="#EF9F27" />
+        <KPICard icon={<Timer className="h-5 w-5" />} label="معلق (غير مؤكد)" value={formatNumber(r.pendingCount)} color="#7F77DD" />
         <KPICard icon={<DollarSign className="h-5 w-5" />} label="صافي الإيراد" value={formatCurrency(r.metrics.netRevenue)} color="#1D9E75" />
       </div>
 
