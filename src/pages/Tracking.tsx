@@ -41,8 +41,9 @@ export function Tracking({ trackingOrders }: { trackingOrders: TrackingOrder[] }
       list = list.filter(t => t.statusCategory === categoryFilter);
     }
     return list.sort((a, b) => {
-      if (!a.date || !b.date) return 0;
-      return b.date.getTime() - a.date.getTime();
+      const aTime = a.date ? a.date.getTime() : 0;
+      const bTime = b.date ? b.date.getTime() : 0;
+      return bTime - aTime;
     });
   }, [trackingOrders, search, categoryFilter]);
 

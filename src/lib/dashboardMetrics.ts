@@ -15,6 +15,10 @@ export function parseOrderDate(dateStr: string): Date | null {
   return isNaN(parsed.getTime()) ? null : parsed;
 }
 
+export function isValidDate(d: unknown): d is Date {
+  return d instanceof Date && !isNaN(d.getTime());
+}
+
 export function getDateISOString(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -191,7 +195,7 @@ export function getProductCountsTracking(tracking: TrackingOrder[]) {
 export function getMonthlyRevenueTracking(tracking: TrackingOrder[]) {
   const map = new Map<string, { orders: number; revenue: number }>();
   tracking.forEach(t => {
-    if (!t.date) return;
+    if (!isValidDate(t.date)) return;
     const key = t.date.getFullYear() + '-' + String(t.date.getMonth() + 1).padStart(2, '0');
     const existing = map.get(key) || { orders: 0, revenue: 0 };
     existing.orders++;
@@ -212,7 +216,7 @@ export function getDailyRevenueTracking(tracking: TrackingOrder[], days: number)
 
   return dateLabels.map(date => {
     const dayOrders = tracking.filter(t => {
-      if (!t.date) return false;
+      if (!isValidDate(t.date)) return false;
       return getDateISOString(t.date) === date;
     });
     return {
@@ -226,7 +230,7 @@ export function getDailyRevenueTracking(tracking: TrackingOrder[], days: number)
 export function filterTrackingLastDays(tracking: TrackingOrder[], days: number) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
-  return tracking.filter(t => t.date && t.date >= cutoff);
+  return tracking.filter(t => isValidDate(t.date) && t.date >= cutoff);
 }
 
 export function getTodayOrders(orders: Order[]) {

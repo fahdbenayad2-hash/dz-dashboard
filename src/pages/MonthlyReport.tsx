@@ -8,7 +8,7 @@ import { DonutChart } from '@/components/charts/DonutChart';
 import { LineChart } from '@/components/charts/LineChart';
 import { formatCurrency, formatNumber, formatPercent } from '@/lib/utils';
 import {
-  getDateISOString, parseOrderDate,
+  getDateISOString, parseOrderDate, isValidDate,
   getTrackingMetrics, getTrackingStatusDistribution, getMonthlyRevenueTracking, getDailyRevenueTracking, filterTrackingLastDays,
 } from '@/lib/dashboardMetrics';
 
@@ -24,7 +24,7 @@ export function MonthlyReport({ orders, trackingOrders }: { orders: Order[]; tra
       const d = new Date();
       d.setDate(d.getDate() - (29 - i));
       const day = getDateISOString(d);
-      return last30.filter(t => t.date && getDateISOString(t.date) === day).length;
+      return last30.filter(t => isValidDate(t.date) && getDateISOString(t.date) === day).length;
     });
 
     const labels30 = [...Array(30)].map((_, i) => {
@@ -37,8 +37,8 @@ export function MonthlyReport({ orders, trackingOrders }: { orders: Order[]; tra
     const mid = new Date(now);
     mid.setDate(mid.getDate() - 15);
 
-    const current15 = last30.filter(t => t.date && t.date >= mid);
-    const previous15 = last30.filter(t => t.date && t.date < mid);
+    const current15 = last30.filter(t => isValidDate(t.date) && t.date >= mid);
+    const previous15 = last30.filter(t => isValidDate(t.date) && t.date < mid);
 
     const currentRevenue = current15.reduce((s, t) => s + t.total, 0);
     const previousRevenue = previous15.reduce((s, t) => s + t.total, 0);

@@ -66,9 +66,11 @@ export async function fetchTracking(): Promise<TrackingOrder[]> {
       if (!orderId) return acc;
       const rawStatus = String(cells[5]?.v || '');
       const rawDate = cells[1]?.v ? String(cells[1].v) : null;
+      const parsedDate = rawDate ? new Date(rawDate) : null;
+      const date = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null;
       acc.push({
         orderId,
-        date: rawDate ? new Date(rawDate) : null,
+        date,
         agent: String(cells[2]?.v || ''),
         customer: String(cells[3]?.v || ''),
         wilaya: String(cells[4]?.v || ''),
