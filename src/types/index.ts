@@ -1,3 +1,19 @@
+export type StatusCategory = 'delivered' | 'returned' | 'transit' | 'delivery' | 'others';
+
+export interface TrackingOrder {
+  orderId: string;
+  date: Date | null;
+  agent: string;
+  customer: string;
+  wilaya: string;
+  trackingStatus: string;
+  statusCategory: StatusCategory;
+  product: string;
+  total: number;
+  delivery: number;
+  driver: string;
+}
+
 export interface Order {
   id: number;
   date: string;

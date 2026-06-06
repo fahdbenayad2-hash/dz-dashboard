@@ -57,7 +57,7 @@ export function Orders({ orders }: { orders: Order[] }) {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between flex-wrap gap-3">
-            <CardTitle>جميع الطلبات ({formatNumber(filteredOrders.length)})</CardTitle>
+            <CardTitle>الطلبات المعلقة ({formatNumber(filteredOrders.length)})</CardTitle>
             <Button variant="outline" size="sm" onClick={exportCSV}>
               <Download className="h-4 w-4" />
               تصدير CSV

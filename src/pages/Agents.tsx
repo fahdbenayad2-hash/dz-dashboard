@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { Order, AgentData, AgentBadge } from '@/types';
+import type { Order, TrackingOrder, AgentData, AgentBadge } from '@/types';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -9,42 +9,20 @@ import { LineChart } from '@/components/charts/LineChart';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/utils';
 import { Star, ThumbsUp, AlertTriangle, Flame } from 'lucide-react';
+import { getAgentDataTracking } from '@/lib/dashboardMetrics';
 
-function useAgentData(orders: Order[]) {
+function useAgentData(trackingOrders: TrackingOrder[]) {
   return useMemo(() => {
-    const agentMap = new Map<string, { total: number; confirmed: number; failed: number; revenue: number }>();
-
-    orders.forEach(o => {
-      if (!o.agent) return;
-      const existing = agentMap.get(o.agent) || { total: 0, confirmed: 0, failed: 0, revenue: 0 };
-      existing.total++;
-      if (o.status === 'Confirmed') existing.confirmed++;
-      if (o.status === 'Failed') existing.failed++;
-      existing.revenue += o.total;
-      agentMap.set(o.agent, existing);
+    const data = getAgentDataTracking(trackingOrders);
+    return data.map((d): AgentData => {
+      const cancelRate = d.cancellationRate;
+      let badge: AgentBadge = 'average';
+      if (cancelRate < 20 && d.totalOrders > 10) badge = 'top';
+      else if (cancelRate < 30) badge = 'good';
+      else if (cancelRate > 40) badge = 'poor';
+      return { ...d, badge };
     });
-
-    return [...agentMap.entries()]
-      .map(([name, d]): AgentData => {
-        const cancelRate = d.total > 0 ? (d.failed / d.total) * 100 : 0;
-        let badge: AgentBadge = 'average';
-        if (cancelRate < 20 && d.total > 10) badge = 'top';
-        else if (cancelRate < 30) badge = 'good';
-        else if (cancelRate > 40) badge = 'poor';
-
-        return {
-          name,
-          totalOrders: d.total,
-          confirmedOrders: d.confirmed,
-          failedOrders: d.failed,
-          cancellationRate: cancelRate,
-          totalRevenue: d.revenue,
-          avgOrderValue: d.total > 0 ? d.revenue / d.total : 0,
-          badge,
-        };
-      })
-      .sort((a, b) => b.totalOrders - a.totalOrders);
-  }, [orders]);
+  }, [trackingOrders]);
 }
 
 const badgeConfig: Record<AgentBadge, { icon: typeof Star; label: string; color: string }> = {
@@ -54,8 +32,8 @@ const badgeConfig: Record<AgentBadge, { icon: typeof Star; label: string; color:
   poor: { icon: Flame, label: 'ضعيف', color: '#E24B4A' },
 };
 
-export function Agents({ orders }: { orders: Order[] }) {
-  const agents = useAgentData(orders);
+export function Agents({ orders, trackingOrders }: { orders: Order[]; trackingOrders: TrackingOrder[] }) {
+  const agents = useAgentData(trackingOrders.length > 0 ? trackingOrders : orders as unknown as TrackingOrder[]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
   const agentOrders = useMemo(() => {

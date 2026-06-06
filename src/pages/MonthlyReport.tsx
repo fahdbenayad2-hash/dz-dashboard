@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { ShoppingCart, DollarSign, CheckCircle, XCircle, BarChart3, TrendingUp, Clock } from 'lucide-react';
-import type { Order } from '@/types';
+import { ShoppingCart, DollarSign, CheckCircle, XCircle, BarChart3, TrendingUp, Clock, Truck } from 'lucide-react';
+import type { Order, TrackingOrder } from '@/types';
 import { KPICard } from '@/components/shared/KPICard';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { BarChart } from '@/components/charts/BarChart';
@@ -8,29 +8,23 @@ import { DonutChart } from '@/components/charts/DonutChart';
 import { LineChart } from '@/components/charts/LineChart';
 import { formatCurrency, formatNumber, formatPercent } from '@/lib/utils';
 import {
-  getOrderMetrics, getStatusDistribution, getDailyConfirmedRevenue,
-  filterLastDays, getDateISOString, parseOrderDate,
+  getDateISOString, parseOrderDate,
+  getTrackingMetrics, getTrackingStatusDistribution, getMonthlyRevenueTracking, getDailyRevenueTracking, filterTrackingLastDays,
 } from '@/lib/dashboardMetrics';
 
-export function MonthlyReport({ orders }: { orders: Order[] }) {
-  console.log('[DZ-CHANGE] MR_FIRST_ORDER', orders[0]);
-  console.log('[DZ-CHANGE] MR_ORDER_KEYS', Object.keys(orders[0] || {}));
-
+export function MonthlyReport({ orders, trackingOrders }: { orders: Order[]; trackingOrders: TrackingOrder[] }) {
   const reportData = useMemo(() => {
-    const last30 = filterLastDays(orders, 30);
-    const metrics = getOrderMetrics(last30);
-    const statusDist = getStatusDistribution(last30);
-    const revenueTrend = getDailyConfirmedRevenue(last30, 30);
+    const last30 = filterTrackingLastDays(trackingOrders, 30);
+    const metrics = getTrackingMetrics(last30);
+    const statusDist = getTrackingStatusDistribution(last30);
+    const revenueTrend = getDailyRevenueTracking(last30, 30);
+    const monthlyData = getMonthlyRevenueTracking(trackingOrders);
 
     const dailyCounts = [...Array(30)].map((_, i) => {
       const d = new Date();
       d.setDate(d.getDate() - (29 - i));
       const day = getDateISOString(d);
-      const count = last30.filter(o => {
-        const od = parseOrderDate(o.date);
-        return od && getDateISOString(od) === day;
-      }).length;
-      return count;
+      return last30.filter(t => t.date && getDateISOString(t.date) === day).length;
     });
 
     const labels30 = [...Array(30)].map((_, i) => {
@@ -39,48 +33,42 @@ export function MonthlyReport({ orders }: { orders: Order[] }) {
       return getDateISOString(d).slice(5);
     });
 
-    const confirmationRate = metrics.totalOrders > 0
-      ? (metrics.confirmedOrders / metrics.totalOrders) * 100
-      : 0;
-
     const now = new Date();
     const mid = new Date(now);
     mid.setDate(mid.getDate() - 15);
 
-    const current15 = last30.filter(o => {
-      const d = parseOrderDate(o.date);
-      return d && d >= mid;
-    });
-    const previous15 = last30.filter(o => {
-      const d = parseOrderDate(o.date);
-      return d && d < mid;
-    });
+    const current15 = last30.filter(t => t.date && t.date >= mid);
+    const previous15 = last30.filter(t => t.date && t.date < mid);
 
-    const currentRevenue = current15.reduce((s, o) => s + o.total, 0);
-    const previousRevenue = previous15.reduce((s, o) => s + o.total, 0);
+    const currentRevenue = current15.reduce((s, t) => s + t.total, 0);
+    const previousRevenue = previous15.reduce((s, t) => s + t.total, 0);
     const growth = previousRevenue > 0
       ? ((currentRevenue - previousRevenue) / previousRevenue) * 100
       : 0;
 
+    const pendingCount = orders.length;
+
     console.log('[DZ-CHANGE] monthly-report-metrics', {
-      totalOrders: metrics.totalOrders,
-      confirmedOrders: metrics.confirmedOrders,
-      failedOrders: metrics.failedOrders,
-      grossRevenue: metrics.grossRevenue,
-      confirmedRevenue: metrics.confirmedRevenue,
-      averageOrderValue: metrics.averageOrderValue,
-      confirmationRate,
-      cancellationRate: metrics.cancellationRate,
+      totalOrders: metrics.total,
+      deliveredOrders: metrics.delivered,
+      returnedOrders: metrics.returned,
+      totalRevenue: metrics.totalRevenue,
+      netRevenue: metrics.netRevenue,
+      averageOrderValue: metrics.avgOrderValue,
+      deliveryRate: metrics.deliveryRate,
+      returnRate: metrics.returnRate,
       growth,
     });
 
     return {
       metrics, statusDist, revenueTrend, dailyCounts, labels30,
-      confirmationRate, growth, currentRevenue, previousRevenue,
+      growth, currentRevenue, previousRevenue, monthlyData, pendingCount,
     };
-  }, [orders]);
+  }, [orders, trackingOrders]);
 
   const r = reportData;
+  const statusLabels = ['تم التوصيل', 'مرتجع', 'قيد التوصيل', 'جاري التوزيع', 'أخرى'];
+  const statusValues = [r.statusDist.delivered, r.statusDist.returned, r.statusDist.inTransit, r.statusDist.inDelivery, r.statusDist.others];
 
   return (
     <div className="space-y-6">
@@ -91,21 +79,21 @@ export function MonthlyReport({ orders }: { orders: Order[] }) {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-        <KPICard icon={<ShoppingCart className="h-5 w-5" />} label="إجمالي الطلبات" value={formatNumber(r.metrics.totalOrders)} />
-        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="المؤكدة" value={formatNumber(r.metrics.confirmedOrders)} color="#1D9E75" />
-        <KPICard icon={<XCircle className="h-5 w-5" />} label="الفاشلة" value={formatNumber(r.metrics.failedOrders)} color="#E24B4A" />
-        <KPICard icon={<BarChart3 className="h-5 w-5" />} label="قيد الانتظار" value={formatNumber(r.metrics.pendingOrders)} color="#EF9F27" />
-        <KPICard icon={<Clock className="h-5 w-5" />} label="بانتظار" value={formatNumber(r.metrics.waitingOrders)} color="#7F77DD" />
-        <KPICard icon={<DollarSign className="h-5 w-5" />} label="الإيراد الإجمالي" value={formatCurrency(r.metrics.grossRevenue)} color="#1D9E75" />
+        <KPICard icon={<ShoppingCart className="h-5 w-5" />} label="إجمالي الطلبات" value={formatNumber(r.metrics.total)} />
+        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم التوصيل" value={formatNumber(r.metrics.delivered)} color="#1D9E75" />
+        <KPICard icon={<XCircle className="h-5 w-5" />} label="المرتجعات" value={formatNumber(r.metrics.returned)} color="#E24B4A" />
+        <KPICard icon={<Truck className="h-5 w-5" />} label="قيد التوصيل" value={formatNumber(r.metrics.inTransit)} color="#EF9F27" />
+        <KPICard icon={<Clock className="h-5 w-5" />} label="معلق (غير مؤكد)" value={formatNumber(r.pendingCount)} color="#7F77DD" />
+        <KPICard icon={<DollarSign className="h-5 w-5" />} label="صافي الإيراد" value={formatCurrency(r.metrics.netRevenue)} color="#1D9E75" />
       </div>
 
-      {/* Revenue + Confirmation */}
+      {/* Revenue + Rates */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
-          <CardHeader><CardTitle>الإيراد المؤكد</CardTitle></CardHeader>
+          <CardHeader><CardTitle>الإيراد الإجمالي (30 يوم)</CardTitle></CardHeader>
           <CardContent>
             <p className="text-2xl font-bold tabular-nums text-[var(--color-success)]">
-              {formatCurrency(r.metrics.confirmedRevenue)}
+              {formatCurrency(r.metrics.totalRevenue)}
             </p>
           </CardContent>
         </Card>
@@ -113,18 +101,18 @@ export function MonthlyReport({ orders }: { orders: Order[] }) {
           <CardHeader><CardTitle>متوسط قيمة الطلب</CardTitle></CardHeader>
           <CardContent>
             <p className="text-2xl font-bold tabular-nums text-[var(--color-primary)]">
-              {formatCurrency(r.metrics.averageOrderValue)}
+              {formatCurrency(r.metrics.avgOrderValue)}
             </p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>معدل التأكيد</CardTitle></CardHeader>
+          <CardHeader><CardTitle>معدل التوصيل</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold tabular-nums text-[var(--color-primary)]">
-              {formatPercent(r.confirmationRate)}
+            <p className="text-2xl font-bold tabular-nums text-[var(--color-success)]">
+              {formatPercent(r.metrics.deliveryRate)}
             </p>
             <p className="text-xs text-[var(--color-text-muted)] mt-1">
-              معدل الإلغاء: {formatPercent(r.metrics.cancellationRate)}
+              معدل الإرجاع: {formatPercent(r.metrics.returnRate)}
             </p>
           </CardContent>
         </Card>
@@ -149,7 +137,7 @@ export function MonthlyReport({ orders }: { orders: Order[] }) {
             <div className="h-72">
               <LineChart
                 labels={r.labels30}
-                datasets={[{ label: 'الإيراد المؤكد', data: r.revenueTrend.map(d => d.revenue), color: '#1D9E75' }]}
+                datasets={[{ label: 'الإيراد', data: r.revenueTrend.map(d => d.revenue), color: '#1D9E75' }]}
               />
             </div>
           </CardContent>
@@ -159,18 +147,12 @@ export function MonthlyReport({ orders }: { orders: Order[] }) {
       {/* Status Distribution + Growth */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
-          <CardHeader><CardTitle>توزيع حالات الطلبات</CardTitle></CardHeader>
+          <CardHeader><CardTitle>توزيع حالات التتبع</CardTitle></CardHeader>
           <CardContent>
             <div className="h-72">
-              <DonutChart
-                labels={['مؤكد', 'فاشل', 'قيد الانتظار', 'بانتظار']}
-                values={[
-                  r.statusDist.find(s => s.status === 'Confirmed')!.value,
-                  r.statusDist.find(s => s.status === 'Failed')!.value,
-                  r.statusDist.find(s => s.status === 'Pending')!.value,
-                  r.statusDist.find(s => s.status === 'Waiting')!.value,
-                ]}
-              />
+              {(statusValues.some(v => v > 0)) && (
+                <DonutChart labels={statusLabels} values={statusValues} />
+              )}
             </div>
           </CardContent>
         </Card>
@@ -198,15 +180,15 @@ export function MonthlyReport({ orders }: { orders: Order[] }) {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-[var(--color-border)] p-3">
-                <p className="text-xs text-[var(--color-text-muted)]">معدل التأكيد</p>
+                <p className="text-xs text-[var(--color-text-muted)]">معدل التوصيل</p>
                 <p className="text-lg font-bold tabular-nums text-[var(--color-success)]">
-                  {formatPercent(r.confirmationRate)}
+                  {formatPercent(r.metrics.deliveryRate)}
                 </p>
               </div>
               <div className="rounded-lg border border-[var(--color-border)] p-3">
-                <p className="text-xs text-[var(--color-text-muted)]">معدل الإلغاء</p>
+                <p className="text-xs text-[var(--color-text-muted)]">معدل الإرجاع</p>
                 <p className="text-lg font-bold tabular-nums text-[var(--color-danger)]">
-                  {formatPercent(r.metrics.cancellationRate)}
+                  {formatPercent(r.metrics.returnRate)}
                 </p>
               </div>
             </div>

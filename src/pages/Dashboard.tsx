@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { ShoppingCart, DollarSign, CheckCircle, XCircle, BarChart3, Wallet } from 'lucide-react';
-import type { Order } from '@/types';
+import { ShoppingCart, DollarSign, CheckCircle, XCircle, BarChart3, Wallet, AlarmClock, Package } from 'lucide-react';
+import type { Order, TrackingOrder } from '@/types';
 import { KPICard } from '@/components/shared/KPICard';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { BarChart } from '@/components/charts/BarChart';
@@ -12,61 +12,46 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { formatCurrency, formatNumber } from '@/lib/utils';
-import { getOrderMetrics, getStatusDistribution, getDailyConfirmedRevenue, getAgentOrderCounts, getTopWilayas, getTopProducts, normalizeStatus } from '@/lib/dashboardMetrics';
+import {
+  getOrderMetrics, normalizeStatus,
+  getTrackingMetrics, getTrackingStatusDistribution, getAgentCountsTracking, getWilayaCountsTracking, getProductCountsTracking, getMonthlyRevenueTracking, getDailyRevenueTracking, getTodayOrders,
+} from '@/lib/dashboardMetrics';
 
-function useDashboardData(orders: Order[]) {
+function useDashboardData(orders: Order[], tracking: TrackingOrder[]) {
   return useMemo(() => {
     const metrics = getOrderMetrics(orders);
-    const statusDist = getStatusDistribution(orders);
-    const statusCounts = {
-      Confirmed: statusDist.find(s => s.status === 'Confirmed')!.value,
-      Failed: statusDist.find(s => s.status === 'Failed')!.value,
-      Pending: statusDist.find(s => s.status === 'Pending')!.value,
-      Waiting: statusDist.find(s => s.status === 'Waiting')!.value,
-    };
-    const agentData = getAgentOrderCounts(orders);
-    const wilayaData = getTopWilayas(orders);
-    const productData = getTopProducts(orders);
-    const revenueTrend = getDailyConfirmedRevenue(orders, 14);
+    const trackingMetrics = getTrackingMetrics(tracking);
+    const trackingStatus = getTrackingStatusDistribution(tracking);
+    const today = getTodayOrders(orders);
+    const agentData = getAgentCountsTracking(tracking);
+    const wilayaData = getWilayaCountsTracking(tracking);
+    const productData = getProductCountsTracking(tracking);
+    const monthlyData = getMonthlyRevenueTracking(tracking);
+    const revenueTrend = getDailyRevenueTracking(tracking, 14);
 
-    console.log('[DZ-CHANGE] cancellation-rate', {
-      totalOrders: metrics.totalOrders,
-      failedOrders: metrics.failedOrders,
-      cancellationRate: metrics.cancellationRate,
-    });
-    console.log('[DZ-CHANGE] confirmed-orders', metrics.confirmedOrders);
+    console.log('[DZ-CHANGE] tracking-metrics', trackingMetrics);
+    console.log('[DZ-CHANGE] today-orders', today);
 
     return {
-      total: metrics.totalOrders,
-      revenue: metrics.grossRevenue,
-      confirmed: metrics.confirmedOrders,
-      cancelRate: metrics.cancellationRate,
-      avgOrder: metrics.averageOrderValue || (metrics.totalOrders > 0 ? metrics.grossRevenue / metrics.totalOrders : 0),
-      netAfterDelivery: metrics.netAfterDelivery,
-      agentData, statusCounts, wilayaData, productData,
+      ...trackingMetrics,
+      ...today,
+      trackingStatus,
+      agentData, wilayaData, productData,
+      monthlyLabels: monthlyData.map(d => d[0]),
+      monthlyOrders: monthlyData.map(d => d[1].orders),
+      monthlyRevenue: monthlyData.map(d => d[1].revenue),
       last14Days: revenueTrend.map(d => d.date),
       dailyRevenue: revenueTrend.map(d => d.revenue),
+      dailyOrders: revenueTrend.map(d => d.orders),
+      pendingOrders: metrics.totalOrders,
     };
-  }, [orders]);
+  }, [orders, tracking]);
 }
 
-export function Dashboard({ orders }: { orders: Order[] }) {
-  console.log('[DZ-CHANGE] FIRST_ORDER', orders[0]);
-  console.log('[DZ-CHANGE] ORDER_KEYS', Object.keys(orders[0] || {}));
-  if (orders.length > 0) {
-    for (let i = 0; i < Math.min(5, orders.length); i++) {
-      console.log('[DZ-CHANGE] ORDER_' + i, {
-        status: orders[i].status,
-        date: orders[i].date,
-        total: orders[i].total,
-      });
-    }
-    console.log('[DZ-CHANGE] normalized-status-sample', orders.slice(0, 10).map(o => ({
-      raw: o.status,
-      normalized: normalizeStatus(o.status),
-    })));
-  }
-  const data = useDashboardData(orders);
+export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackingOrders: TrackingOrder[] }) {
+  console.log('[DZ-DASHBOARD] orders:', orders.length, 'trackingOrders:', trackingOrders.length);
+  console.log('[DZ-DASHBOARD] first trackingOrder:', trackingOrders[0]);
+  const data = useDashboardData(orders, trackingOrders);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(0);
@@ -95,12 +80,20 @@ export function Dashboard({ orders }: { orders: Order[] }) {
     <div className="space-y-6">
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        <KPICard icon={<ShoppingCart className="h-5 w-5" />} label="إجمالي الطلبات" value={formatNumber(data.total)} change={0} />
-        <KPICard icon={<DollarSign className="h-5 w-5" />} label="إجمالي الإيراد" value={formatCurrency(data.revenue)} change={2.3} color="#1D9E75" />
-        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="الطلبات المؤكدة" value={formatNumber(data.confirmed)} change={1.1} color="#1D9E75" />
-        <KPICard icon={<XCircle className="h-5 w-5" />} label="معدل الإلغاء" value={data.cancelRate.toFixed(1) + '%'} change={-0.5} color="#E24B4A" />
-        <KPICard icon={<BarChart3 className="h-5 w-5" />} label="متوسط قيمة الطلب" value={formatCurrency(data.avgOrder)} change={0.8} color="#7F77DD" />
-        <KPICard icon={<Wallet className="h-5 w-5" />} label="صافي بعد الشحن" value={formatCurrency(data.netAfterDelivery)} change={1.5} />
+        <KPICard icon={<ShoppingCart className="h-5 w-5" />} label="إجمالي الطلبات (مؤكدة)" value={formatNumber(data.total)} change={0} />
+        <KPICard icon={<DollarSign className="h-5 w-5" />} label="إجمالي الإيراد" value={formatCurrency(data.totalRevenue)} change={2.3} color="#1D9E75" />
+        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم التوصيل" value={formatNumber(data.delivered)} change={1.1} color="#1D9E75" />
+        <KPICard icon={<XCircle className="h-5 w-5" />} label="المرتجعات" value={formatNumber(data.returned)} change={-0.5} color="#E24B4A" />
+        <KPICard icon={<BarChart3 className="h-5 w-5" />} label="متوسط قيمة الطلب" value={formatCurrency(data.avgOrderValue)} change={0.8} color="#7F77DD" />
+        <KPICard icon={<Wallet className="h-5 w-5" />} label="صافي بعد الشحن" value={formatCurrency(data.netRevenue)} change={1.5} />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        <KPICard icon={<AlarmClock className="h-5 w-5" />} label="طلبات اليوم (جديدة)" value={formatNumber(data.ordersToday)} color="#378ADD" />
+        <KPICard icon={<DollarSign className="h-5 w-5" />} label="مداخيل اليوم" value={formatCurrency(data.revenueToday)} color="#1D9E75" />
+        <KPICard icon={<Package className="h-5 w-5" />} label="قيد التوصيل" value={formatNumber(data.inTransit + data.inDelivery)} color="#EF9F27" />
+        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="معدل التوصيل" value={data.deliveryRate.toFixed(1) + '%'} color="#1D9E75" />
+        <KPICard icon={<XCircle className="h-5 w-5" />} label="معدل الإرجاع" value={data.returnRate.toFixed(1) + '%'} color="#E24B4A" />
+        <KPICard icon={<ShoppingCart className="h-5 w-5" />} label="معلق (غير مؤكد)" value={formatNumber(data.pendingOrders)} color="#7F77DD" />
       </div>
 
       {/* Charts Row 1 */}
@@ -120,13 +113,13 @@ export function Dashboard({ orders }: { orders: Order[] }) {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>حالة الطلبات</CardTitle></CardHeader>
+          <CardHeader><CardTitle>حالة التتبع</CardTitle></CardHeader>
           <CardContent>
             <div className="h-72">
-              {(data.statusCounts.Confirmed + data.statusCounts.Failed + data.statusCounts.Pending + data.statusCounts.Waiting) > 0 && (
+              {(data.trackingStatus.delivered + data.trackingStatus.returned + data.trackingStatus.inTransit + data.trackingStatus.inDelivery) > 0 && (
                 <DonutChart
-                  labels={['مؤكد', 'فاشل', 'قيد الانتظار', 'بانتظار']}
-                  values={[data.statusCounts.Confirmed, data.statusCounts.Failed, data.statusCounts.Pending, data.statusCounts.Waiting]}
+                  labels={['تم التوصيل', 'مرتجع', 'قيد التوصيل', 'جاري التوزيع', 'أخرى']}
+                  values={[data.trackingStatus.delivered, data.trackingStatus.returned, data.trackingStatus.inTransit, data.trackingStatus.inDelivery, data.trackingStatus.others]}
                 />
               )}
             </div>
@@ -137,7 +130,7 @@ export function Dashboard({ orders }: { orders: Order[] }) {
       {/* Charts Row 2 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
-          <CardHeader><CardTitle>أفضل 10 ولايات</CardTitle></CardHeader>
+          <CardHeader><CardTitle>أفضل 15 ولاية</CardTitle></CardHeader>
           <CardContent>
             <div className="h-72">
               {data.wilayaData.length > 0 && (
@@ -152,7 +145,7 @@ export function Dashboard({ orders }: { orders: Order[] }) {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>أفضل 6 منتجات (حسب الإيراد)</CardTitle></CardHeader>
+          <CardHeader><CardTitle>أفضل 10 منتجات (حسب الإيراد)</CardTitle></CardHeader>
           <CardContent>
             <div className="h-72">
               {data.productData.length > 0 && (
@@ -167,20 +160,36 @@ export function Dashboard({ orders }: { orders: Order[] }) {
         </Card>
       </div>
 
-      {/* Revenue Trend */}
-      <Card>
-        <CardHeader><CardTitle>اتجاه الإيرادات (آخر 14 يوم)</CardTitle></CardHeader>
-        <CardContent>
-          <div className="h-72">
-            <LineChart
-              labels={data.last14Days}
-              datasets={[
-                { label: 'الإيراد المؤكد', data: data.dailyRevenue, color: '#1D9E75' },
-              ]}
-            />
-          </div>
-        </CardContent>
-      </Card>
+      {/* Revenue Trend + Monthly Trend */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader><CardTitle>اتجاه الإيرادات (آخر 14 يوم)</CardTitle></CardHeader>
+          <CardContent>
+            <div className="h-72">
+              <LineChart
+                labels={data.last14Days}
+                datasets={[
+                  { label: 'الإيراد', data: data.dailyRevenue, color: '#1D9E75' },
+                ]}
+              />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>الاتجاه الشهري (آخر 6 أشهر)</CardTitle></CardHeader>
+          <CardContent>
+            <div className="h-72">
+              {data.monthlyLabels.length > 0 && (
+                <BarChart
+                  labels={data.monthlyLabels}
+                  values={data.monthlyRevenue}
+                  color="#378ADD"
+                />
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Recent Orders */}
       <Card>

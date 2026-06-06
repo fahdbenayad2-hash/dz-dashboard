@@ -8,9 +8,11 @@ import { Dashboard } from '@/pages/Dashboard';
 import { Products } from '@/pages/Products';
 import { Agents } from '@/pages/Agents';
 import { Orders } from '@/pages/Orders';
+import { Tracking } from '@/pages/Tracking';
 import { RiskCenter } from '@/pages/RiskCenter';
 import { MonthlyReport } from '@/pages/MonthlyReport';
 import { useSheetData } from '@/hooks/useSheetData';
+import { useTrackingData } from '@/hooks/useTrackingData';
 import { isAuthenticated, logout } from '@/lib/auth';
 import { classNames } from '@/lib/utils';
 import { Loader2 } from 'lucide-react';
@@ -60,12 +62,13 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
   onLogout: () => void;
 }) {
   const { orders, loading, error, lastUpdated, refresh } = useSheetData();
+  const { trackingOrders, trackingLoading, trackingError } = useTrackingData();
 
   console.log('[DZ-CHANGE] responsive-layout-loaded');
   console.log('[DZ-CHANGE] layout-desktop-fixed');
   console.log('[DZ-CHANGE] layout-mobile-fixed');
 
-  if (loading) {
+  if (loading || trackingLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-[var(--color-bg)]">
         <div className="text-center space-y-4">
@@ -76,11 +79,11 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
     );
   }
 
-  if (error) {
+  if (error || trackingError) {
     return (
       <div className="flex items-center justify-center h-screen bg-[var(--color-bg)]">
         <div className="text-center space-y-4">
-          <p className="text-[var(--color-danger)] text-lg">{error}</p>
+          <p className="text-[var(--color-danger)] text-lg">{error || trackingError}</p>
           <button
             onClick={refresh}
             className="px-4 py-2 bg-[var(--color-primary)] text-white rounded-lg text-sm"
@@ -112,12 +115,13 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
           />
           <main className="flex-1 p-6 overflow-x-hidden">
             <Routes>
-              <Route path="/" element={<ProtectedRoute><Dashboard orders={orders} /></ProtectedRoute>} />
+              <Route path="/" element={<ProtectedRoute><Dashboard orders={orders} trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/products" element={<ProtectedRoute><Products orders={orders} /></ProtectedRoute>} />
-              <Route path="/agents" element={<ProtectedRoute><Agents orders={orders} /></ProtectedRoute>} />
+              <Route path="/agents" element={<ProtectedRoute><Agents orders={orders} trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/orders" element={<ProtectedRoute><Orders orders={orders} /></ProtectedRoute>} />
+              <Route path="/tracking" element={<ProtectedRoute><Tracking trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/risk" element={<ProtectedRoute><RiskCenter orders={orders} /></ProtectedRoute>} />
-              <Route path="/monthly-report" element={<ProtectedRoute><MonthlyReport orders={orders} /></ProtectedRoute>} />
+              <Route path="/monthly-report" element={<ProtectedRoute><MonthlyReport orders={orders} trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/login" element={<Navigate to="/" replace />} />
             </Routes>
           </main>

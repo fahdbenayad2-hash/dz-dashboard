@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, PackageSearch, Users, ClipboardList, ShieldAlert,
-  CalendarDays, Menu, LogOut,
+  CalendarDays, Menu, LogOut, Package,
 } from 'lucide-react';
 import { classNames } from '@/lib/utils';
 
@@ -11,7 +11,8 @@ const navItems = [
   { to: '/monthly-report', icon: CalendarDays, label: 'تقرير الشهر الأخير' },
   { to: '/products', icon: PackageSearch, label: 'المنتجات والتسعير' },
   { to: '/agents', icon: Users, label: 'الوكلاء' },
-  { to: '/orders', icon: ClipboardList, label: 'الطلبات' },
+  { to: '/orders', icon: ClipboardList, label: 'الطلبات المعلقة' },
+  { to: '/tracking', icon: Package, label: 'التتبع' },
   { to: '/risk', icon: ShieldAlert, label: 'مركز المخاطر' },
 ];
 
