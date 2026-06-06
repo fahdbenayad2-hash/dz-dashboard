@@ -31,18 +31,19 @@ async function fetchAllPages() {
     }
     const json = await res.json();
     if (page === 1) {
-      console.log('[DZ-PROXY] orders page=1 keys=' + Object.keys(json).join(',') + ' all_count=' + json.all_count + ' records_len=' + (json.records ? json.records.length : 'no_records_key'));
+      totalCount = json.all_count ? Number(json.all_count) : null;
+      const firstKeys = json.records?.[0] ? Object.keys(json.records[0]).join(',') : 'no_records';
+      console.log('[DZ-PROXY] orders page=1 keys=' + Object.keys(json).join(',') + ' all_count=' + totalCount + ' records_len=' + (json.records ? json.records.length : 'no_records_key') + ' first_record_keys=' + firstKeys);
     }
     if (!json.records) {
       console.log('[DZ-PROXY] orders page=' + page + ' no records key, keys=' + Object.keys(json).join(','));
       break;
     }
-    console.log('[DZ-PROXY] orders page=' + page + ' rows=' + json.records.length);
+    console.log('[DZ-PROXY] orders page=' + page + ' rows=' + json.records.length + ' totalSoFar=' + allData.length + '/' + totalCount);
     if (json.records.length === 0) break;
     allData = [...allData, ...json.records];
     totalPages++;
     page += 1;
-    if (json.all_count !== undefined && Number(json.all_count) > 0 && allData.length >= Number(json.all_count)) break;
     if (json.records.length < limit) break;
   }
 
