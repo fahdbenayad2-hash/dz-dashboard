@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { DollarSign, CheckCircle, XCircle, BarChart3, Wallet, AlarmClock, Timer, Package } from 'lucide-react';
+import { DollarSign, CheckCircle, XCircle, BarChart3, AlarmClock, Timer, Package, PackageCheck, PiggyBank } from 'lucide-react';
 import type { Order, TrackingOrder } from '@/types';
 import { KPICard } from '@/components/shared/KPICard';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -80,12 +80,12 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
     <div className="space-y-6">
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        <KPICard icon={<Package className="h-5 w-5" />} label="إجمالي الطلبات (مؤكدة)" value={formatNumber(data.total)} change={0} />
+        <KPICard icon={<PackageCheck className="h-5 w-5" />} label="إجمالي الطلبات (مؤكدة)" value={formatNumber(data.total)} change={0} />
         <KPICard icon={<DollarSign className="h-5 w-5" />} label="إجمالي الإيراد" value={formatCurrency(data.totalRevenue)} change={2.3} color="#1D9E75" />
         <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم التوصيل" value={formatNumber(data.delivered)} change={1.1} color="#1D9E75" />
         <KPICard icon={<XCircle className="h-5 w-5" />} label="المرتجعات" value={formatNumber(data.returned)} change={-0.5} color="#E24B4A" />
         <KPICard icon={<BarChart3 className="h-5 w-5" />} label="متوسط قيمة الطلب" value={formatCurrency(data.avgOrderValue)} change={0.8} color="#7F77DD" />
-        <KPICard icon={<Wallet className="h-5 w-5" />} label="صافي بعد الشحن" value={formatCurrency(data.netRevenue)} change={1.5} />
+        <KPICard icon={<PiggyBank className="h-5 w-5" />} label="صافي بعد الشحن" value={formatCurrency(data.netRevenue)} change={1.5} />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         <KPICard icon={<AlarmClock className="h-5 w-5" />} label="طلبات اليوم (جديدة)" value={formatNumber(data.ordersToday)} color="#378ADD" />
