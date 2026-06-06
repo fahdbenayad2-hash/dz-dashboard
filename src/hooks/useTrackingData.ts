@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { TrackingOrder } from '@/types';
-import { fetchTracking } from '@/lib/sheetsApi';
+import { fetchTracking } from '@/lib/octomaticApi';
 
 export function useTrackingData() {
   const [trackingOrders, setTrackingOrders] = useState<TrackingOrder[]>([]);

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Order } from '@/types';
-import { fetchOrders } from '@/lib/sheetsApi';
+import { fetchOrders } from '@/lib/octomaticApi';
 
-export function useSheetData() {
+export function useOrdersData() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

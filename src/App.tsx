@@ -11,7 +11,7 @@ import { Orders } from '@/pages/Orders';
 import { Tracking } from '@/pages/Tracking';
 import { RiskCenter } from '@/pages/RiskCenter';
 import { MonthlyReport } from '@/pages/MonthlyReport';
-import { useSheetData } from '@/hooks/useSheetData';
+import { useOrdersData } from '@/hooks/useOrdersData';
 import { useTrackingData } from '@/hooks/useTrackingData';
 import { isAuthenticated, logout } from '@/lib/auth';
 import { classNames } from '@/lib/utils';
@@ -61,7 +61,7 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
   setDark: (v: boolean | ((prev: boolean) => boolean)) => void;
   onLogout: () => void;
 }) {
-  const { orders, loading, error, lastUpdated, refresh } = useSheetData();
+  const { orders, loading, error, lastUpdated, refresh } = useOrdersData();
   const { trackingOrders, trackingLoading, trackingError } = useTrackingData();
 
   console.log('[DZ-CHANGE] responsive-layout-loaded');
