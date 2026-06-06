@@ -6,13 +6,13 @@ const X_AUTH = process.env.OCTOMATIC_X_AUTH!;
 
 async function fetchAllPages() {
   let allData: unknown[] = [];
-  const limit = 50;
-  let page = 0;
+  const limit = 500;
+  let page = 1;
   let totalPages = 0;
   let totalCount: number | null = null;
 
   while (true) {
-    const url = `${BASE_URL}/tenants/api/orders?limit=${limit}&page=${page}`;
+    const url = `${BASE_URL}/tenants/api/CashOutRequests/getAll?limit=${limit}&page=${page}`;
     console.log('[DZ-PROXY] orders page=' + page + ' url=' + url);
     const res = await fetch(url, {
       headers: {
@@ -30,24 +30,23 @@ async function fetchAllPages() {
       break;
     }
     const json = await res.json();
-    if (page === 0) {
-      console.log('[DZ-PROXY] orders page=0 keys=' + Object.keys(json).join(',') + ' all_count=' + json.all_count);
-      totalCount = json.all_count ? Number(json.all_count) : null;
+    if (page === 1) {
+      console.log('[DZ-PROXY] orders page=1 keys=' + Object.keys(json).join(',') + ' all_count=' + json.all_count + ' records_len=' + (json.records ? json.records.length : 'no_records_key'));
     }
-    if (!json.data) {
-      console.log('[DZ-PROXY] orders page=' + page + ' no data key, keys=' + Object.keys(json).join(','));
+    if (!json.records) {
+      console.log('[DZ-PROXY] orders page=' + page + ' no records key, keys=' + Object.keys(json).join(','));
       break;
     }
-    console.log('[DZ-PROXY] orders page=' + page + ' rows=' + json.data.length);
-    if (json.data.length === 0) break;
-    allData = [...allData, ...json.data];
+    console.log('[DZ-PROXY] orders page=' + page + ' rows=' + json.records.length);
+    if (json.records.length === 0) break;
+    allData = [...allData, ...json.records];
     totalPages++;
     page += 1;
-    if (totalCount !== null && allData.length >= totalCount) break;
-    if (json.data.length < limit) break;
+    if (json.all_count !== undefined && Number(json.all_count) > 0 && allData.length >= Number(json.all_count)) break;
+    if (json.records.length < limit) break;
   }
 
-  console.log('[DZ-PROXY] orders done: totalPages=' + totalPages + ' totalRows=' + allData.length + ' totalCount=' + totalCount);
+  console.log('[DZ-PROXY] orders done: totalPages=' + totalPages + ' totalRows=' + allData.length + ' all_count=' + totalCount);
   return allData;
 }
 

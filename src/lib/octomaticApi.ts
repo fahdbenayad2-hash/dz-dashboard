@@ -2,18 +2,17 @@ import type { Order, OrderStatus, TrackingOrder, StatusCategory } from '@/types'
 import { normalizeStatus } from '@/lib/dashboardMetrics';
 
 function mapOrder(o: any): Order {
-  const phone = o.customer?.phones?.[0]?.phone || '';
   return {
     id: Number(o.id) || 0,
-    date: o.created_at || '',
-    customer: o.customer?.fullname || '',
-    phone: String(phone),
-    wilaya: o.addrs?.wilaya?.name || '',
-    status: normalizeStatus(o.status_order?.name || '') as OrderStatus,
-    product: o.products_order?.[0]?.product?.name || '',
-    total: Number(o.order_total || 0),
-    delivery: Number(o.delivery_cost || 0),
-    agent: o.agent?.fullname || '',
+    date: o.createdAt || o.date || '',
+    customer: o.customerName || o.customer || '',
+    phone: String(o.phone || ''),
+    wilaya: o.wilaya || '',
+    status: normalizeStatus(o.status || '') as OrderStatus,
+    product: o.product || '',
+    total: Number(o.total || 0),
+    delivery: Number(o.delivery_cost || o.delivery || 0),
+    agent: o.agentName || o.agent || '',
   };
 }
 
