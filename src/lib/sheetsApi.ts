@@ -62,25 +62,25 @@ export async function fetchTracking(): Promise<TrackingOrder[]> {
     .reduce((acc: TrackingOrder[], row: { c: { v: unknown; f?: string }[] | null }) => {
       const cells = row.c;
       if (!cells) return acc;
-      const orderId = String(cells[0]?.v || '');
+      // GAS writes: [Tracking ID, Order ID, Status, Date, Wilaya, Agent, Customer, Product, Total, Delivery]
+      const orderId = String(cells[1]?.v || '');
       if (!orderId) return acc;
-      const rawStatus = String(cells[5]?.v || '');
-      const rawDate = String(cells[1]?.f || cells[1]?.v || '');
-      console.log('[DZ-DATE] Tracking raw date:', rawDate, '| f:', cells[1]?.f, '| v:', cells[1]?.v);
+      const rawStatus = String(cells[2]?.v || '');
+      const rawDate = String(cells[3]?.f || cells[3]?.v || '');
       const parsedDate = rawDate ? new Date(rawDate) : null;
       const date = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null;
       acc.push({
         orderId,
         date,
-        agent: String(cells[2]?.v || ''),
-        customer: String(cells[3]?.v || ''),
+        agent: String(cells[5]?.v || ''),
+        customer: String(cells[6]?.v || ''),
         wilaya: String(cells[4]?.v || ''),
         trackingStatus: rawStatus,
         statusCategory: classifyTrackingStatus(rawStatus),
-        product: String(cells[6]?.v || ''),
-        total: Number(cells[7]?.v) || 0,
-        delivery: Number(cells[8]?.v) || 0,
-        driver: String(cells[9]?.v || ''),
+        product: String(cells[7]?.v || ''),
+        total: Number(cells[8]?.v) || 0,
+        delivery: Number(cells[9]?.v) || 0,
+        driver: '',
       });
       return acc;
     }, []);

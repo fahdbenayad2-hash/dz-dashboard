@@ -12,36 +12,25 @@
 // ──────────────────────────────────────────────
 
 var CONFIG = {
-  BASE_URL: 'https://leaderscod.com',
-  TOKEN: '', // set via ScriptProperties or menu
-  ORDERS_ENDPOINT: '/tenants/api/CashOutRequests/getAll',
+  BASE_URL: 'https://femmesoir.leaderscod.com',
+  TOKEN: '',
+  X_AUTH: '',
+  ORDERS_ENDPOINT: '/tenants/api/orders',
   TRACKING_ENDPOINT: '/tenants/api/tracking-order',
-  BATCH_SIZE: 500,
+  ORDERS_LIMIT: 50,
+  TRACKING_LIMIT: 70,
+  WRITE_BATCH: 500,
   TIMEOUT_MINUTES: 5,
   MAX_RETRIES: 3,
   STATUS_MAP: {
-    // Arabic shipping statuses → 4 categories
-    'livré':        'تم التوصيل',
-    'livrée':       'تم التوصيل',
-    'livrer':       'تم التوصيل',
-    'terminé':      'تم التوصيل',
-    'terminer':     'تم التوصيل',
-    'retour':       'مرتجع',
-    'retourné':     'مرتجع',
-    'retourner':    'مرتجع',
-    'en cours':     'قيد التوصيل',
-    'en transit':   'قيد التوصيل',
-    'transit':      'قيد التوصيل',
-    'en livraison': 'قيد التوصيل',
-    'livraison':    'قيد التوصيل',
-    'preparation':  'قيد التوصيل',
-    'en préparation':'قيد التوصيل',
-    'annulé':       'ملغي',
-    'annuler':      'ملغي',
-    'annulation':   'ملغي',
-    'non confirmé': 'ملغي',
-    'en attente':   'معلق',
-    'attente':      'معلق',
+    delivered: ["livré", "livre", "livrée", "delivered", "مسلم", "تم التسليم"],
+    returned:  ["retour", "retourné", "retournée", "colis retourné", "refus", "refusé",
+                "refused", "رجع", "مرجع", "إرجاع", "annulé", "annulée", "ملغى"],
+    transit:   ["en transit", "transit", "في الطريق", "vers", "expédié", "en cours",
+                "sorti", "en route"],
+    delivery:  ["en livraison", "livraison", "ramassé", "en cours de livraison",
+                "camion", "centre", "توزيع", "out for delivery", "قيد التوزيع",
+                "prêt", "prêt à expedit", "en attente de ramassage"]
   },
 };
 
@@ -61,16 +50,27 @@ function onOpen() {
     .addItem('🔍 تطبيق الفلترة', 'buildFilteredReport')
     .addSeparator()
     .addItem('🔑 تعيين التوكن', 'setToken')
+    .addItem('🔑 تعيين مفتاح X-AUTH', 'setXAuth')
     .addToUi();
 }
 
 function setToken() {
   var ui = SpreadsheetApp.getUi();
-  var response = ui.prompt('🔑 أدخل التوكن الجديد:');
+  var response = ui.prompt('🔑 أدخل التوكن الجديد (JWT):');
   if (response.getSelectedButton() === ui.Button.OK) {
     PropertiesService.getScriptProperties().setProperty('JWT_TOKEN', response.getResponseText().trim());
     CONFIG.TOKEN = response.getResponseText().trim();
     ui.alert('✅ تم حفظ التوكن بنجاح');
+  }
+}
+
+function setXAuth() {
+  var ui = SpreadsheetApp.getUi();
+  var response = ui.prompt('🔑 أدخل مفتاح X-AUTH الخاص:');
+  if (response.getSelectedButton() === ui.Button.OK) {
+    PropertiesService.getScriptProperties().setProperty('X_AUTH_KEY', response.getResponseText().trim());
+    CONFIG.X_AUTH = response.getResponseText().trim();
+    ui.alert('✅ تم حفظ مفتاح X-AUTH بنجاح');
   }
 }
 
@@ -81,15 +81,22 @@ function getToken() {
   return stored || '';
 }
 
+function getXAuth() {
+  if (CONFIG.X_AUTH) return CONFIG.X_AUTH;
+  var stored = PropertiesService.getScriptProperties().getProperty('X_AUTH_KEY');
+  if (stored) CONFIG.X_AUTH = stored;
+  return stored || '';
+}
+
 // ──────────────────────────────────────────────
 //  HEADERS
 // ──────────────────────────────────────────────
 
 function buildHeaders_() {
-  var token = getToken();
   return {
-    'Authorization': 'Bearer ' + token,
-    'x-authorization': token,
+    'Authorization': 'Bearer ' + getToken(),
+    'x-authorization': getXAuth(),
+    'lang': 'ar',
     'Accept': 'application/json',
     'Content-Type': 'application/json',
   };
@@ -151,142 +158,173 @@ function apiGet_(endpoint, params) {
   return null;
 }
 
+function _appendRows(sheet, rows) {
+  if (!rows || !rows.length) return;
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+}
+
 // ──────────────────────────────────────────────
-//  1. SYNC ORDERS (Incremental)
+//  1. SYNC ORDERS (Incremental with skip fix)
 // ──────────────────────────────────────────────
 
 function syncOrdersWithReturn() {
-  var sheet = ensureSheet_('Orders', ['Order ID', 'Date', 'Customer', 'Phone', 'Wilaya', 'Status', 'Product', 'Total', 'Delivery', 'Agent']);
-  var maxId = getMaxId_(sheet, 1);
+  var sheet = ensureSheet_('Orders', ['Order ID','Date','Customer','Phone','Wilaya','Status','Product','Total','Delivery','Agent']);
   var props = PropertiesService.getScriptProperties();
-  var page = 1;
+  var maxKnownId = Number(props.getProperty('MAX_KNOWN_ORDER_ID') || '0');
+  var page = 0;
   var totalWritten = 0;
   var startTime = Date.now();
   var timeoutMs = CONFIG.TIMEOUT_MINUTES * 60 * 1000;
-  var lastId = maxId;
+  var currentMax = maxKnownId;
+  var buffer = [];
 
   while (true) {
     if (Date.now() - startTime > timeoutMs) {
-      props.setProperty('orders_checkpoint', JSON.stringify({ page: page, lastId: lastId }));
-      SpreadsheetApp.getActiveSpreadsheet().toast('⏰ انتهى الوقت. توقف عند الصفحة ' + page + '. شغّل المزامنة مرة أخرى للاستئناف.', 'مزامنة الطلبات', 10);
+      props.setProperty('orders_checkpoint', JSON.stringify({ page: page, lastId: currentMax }));
+      SpreadsheetApp.getActiveSpreadsheet().toast('⏰ انتهى الوقت. توقف عند الصفحة ' + page + '.', 'مزامنة الطلبات', 10);
       break;
     }
 
     var data;
     try {
-      data = apiGet_(CONFIG.ORDERS_ENDPOINT, { page: page, limit: CONFIG.BATCH_SIZE });
+      data = apiGet_(CONFIG.ORDERS_ENDPOINT, { offset: page, limit: CONFIG.ORDERS_LIMIT });
     } catch (e) {
       SpreadsheetApp.getActiveSpreadsheet().toast('❌ ' + e.message, 'خطأ', 10);
       throw e;
     }
 
-    if (!data || !data.records || data.records.length === 0) break;
+    if (!data || !data.data || data.data.length === 0) break;
 
     var newRows = [];
-    for (var i = 0; i < data.records.length; i++) {
-      var r = data.records[i];
-      var id = Number(r.id) || 0;
-      if (id <= lastId) continue;
+    var oldCount = 0;
+    for (var i = 0; i < data.data.length; i++) {
+      var o = data.data[i];
+      var oid = Number(o.id);
+      if (oid <= maxKnownId) { oldCount++; continue; }
+      if (oid > currentMax) currentMax = oid;
       newRows.push([
-        id,
-        r.createdAt || r.date || '',
-        r.customerName || r.customer || '',
-        r.phone || '',
-        r.wilaya || '',
-        r.status || '',
-        r.product || '',
-        Number(r.total) || 0,
-        Number(r.delivery_cost) || Number(r.delivery) || 0,
-        r.agentName || r.agent || '',
+        o.id,
+        o.created_at || '',
+        (o.customer && o.customer.fullname) || '',
+        (o.customer && o.customer.phones && o.customer.phones[0] && o.customer.phones[0].phone) || '',
+        (o.addrs && o.addrs.wilaya && o.addrs.wilaya.name) || '',
+        (o.status_order && o.status_order.name) || '',
+        (o.products_order && o.products_order[0] && o.products_order[0].product && o.products_order[0].product.name) || '',
+        Number(o.order_total || 0),
+        Number(o.delivery_cost || 0),
+        (o.agent && o.agent.fullname) || '',
       ]);
     }
 
+    if (oldCount === data.data.length) break;
+
     if (newRows.length > 0) {
-      var lastRow = sheet.getLastRow();
-      var targetRange = sheet.getRange(lastRow + 1, 1, newRows.length, 10);
-      targetRange.setValues(newRows);
-      totalWritten += newRows.length;
-      var ids = newRows.map(function(row) { return row[0]; });
-      lastId = Math.max.apply(null, ids);
+      buffer = buffer.concat(newRows);
+      if (buffer.length >= CONFIG.WRITE_BATCH) {
+        _appendRows(sheet, buffer);
+        totalWritten += buffer.length;
+        buffer = [];
+      }
     }
 
-    if (data.records.length < CONFIG.BATCH_SIZE) break;
+    if (data.data.length < CONFIG.ORDERS_LIMIT) break;
     page++;
+    Utilities.sleep(100);
+  }
+
+  if (buffer.length) {
+    _appendRows(sheet, buffer);
+    totalWritten += buffer.length;
   }
 
   props.deleteProperty('orders_checkpoint');
-  props.setProperty('MAX_KNOWN_ORDER_ID', String(lastId));
+  if (currentMax > maxKnownId) props.setProperty('MAX_KNOWN_ORDER_ID', String(currentMax));
   SpreadsheetApp.getActiveSpreadsheet().toast('✅ تمت مزامنة ' + totalWritten + ' طلب جديد', 'مزامنة الطلبات', 5);
   return totalWritten;
 }
 
 // ──────────────────────────────────────────────
-//  2. SYNC TRACKING (Incremental)
+//  2. SYNC TRACKING (Incremental with skip fix)
 // ──────────────────────────────────────────────
 
 function syncTrackingWithReturn() {
-  var sheet = ensureSheet_('Tracking', ['Tracking ID', 'Order ID', 'Status', 'Date', 'Wilaya', 'Note']);
-  var maxId = getMaxId_(sheet, 1);
+  var sheet = ensureSheet_('Tracking', ['Order ID','Date','Agent','Customer','Wilaya','Tracking Status','Product','Total','Delivery','Driver']);
   var props = PropertiesService.getScriptProperties();
-  var page = 1;
+  var maxKnownId = Number(props.getProperty('MAX_KNOWN_TRACKING_ID') || '0');
+  var page = 0;
   var totalWritten = 0;
   var startTime = Date.now();
   var timeoutMs = CONFIG.TIMEOUT_MINUTES * 60 * 1000;
-  var lastId = maxId;
-  var checkpoint = props.getProperty('tracking_checkpoint');
-  if (checkpoint) {
-    var cp = JSON.parse(checkpoint);
-    page = cp.page || 1;
-    lastId = cp.lastId || lastId;
-  }
+  var currentMax = maxKnownId;
+  var buffer = [];
 
   while (true) {
     if (Date.now() - startTime > timeoutMs) {
-      props.setProperty('tracking_checkpoint', JSON.stringify({ page: page, lastId: lastId }));
+      props.setProperty('tracking_checkpoint', JSON.stringify({ page: page, lastId: currentMax }));
       SpreadsheetApp.getActiveSpreadsheet().toast('⏰ انتهى وقت التتبع. استأنف بتشغيل المزامنة مرة أخرى.', 'مزامنة التتبع', 10);
       break;
     }
 
     var data;
     try {
-      data = apiGet_(CONFIG.TRACKING_ENDPOINT, { page: page, limit: CONFIG.BATCH_SIZE });
+      data = apiGet_(CONFIG.TRACKING_ENDPOINT, { offset: page, limit: CONFIG.TRACKING_LIMIT });
     } catch (e) {
       SpreadsheetApp.getActiveSpreadsheet().toast('❌ ' + e.message, 'خطأ', 10);
       throw e;
     }
 
-    if (!data || !data.records || data.records.length === 0) break;
+    if (!data || !data.data || data.data.length === 0) break;
 
     var newRows = [];
-    for (var i = 0; i < data.records.length; i++) {
-      var r = data.records[i];
-      var id = Number(r.id) || 0;
-      if (id <= lastId) continue;
+    var oldCount = 0;
+    for (var i = 0; i < data.data.length; i++) {
+      var item = data.data[i];
+      var tid = Number(item.id);
+      if (tid <= maxKnownId) { oldCount++; continue; }
+      if (tid > currentMax) currentMax = tid;
+
       newRows.push([
-        id,
-        Number(r.order_id) || Number(r.orderId) || 0,
-        r.status || '',
-        r.date || r.createdAt || '',
-        r.wilaya || '',
-        r.note || '',
+        (item.order && item.order.id) || '',
+        item.date_and_time || '',
+        (item.confirmed_by && item.confirmed_by.fullname) || '',
+        (item.order && item.order.customer && item.order.customer.fullname) || '',
+        (item.order && item.order.addrs && item.order.addrs.wilaya && item.order.addrs.wilaya.name) || '',
+        item.tracking_status || '',
+        (item.order && item.order.products_order && item.order.products_order[0] && item.order.products_order[0].product && item.order.products_order[0].product.name) || '',
+        Number(item.order && item.order.order_total || 0),
+        Number(item.order && item.order.delivery_cost || 0),
+        item.driver_name || '',
       ]);
     }
 
+    if (oldCount === data.data.length) break;
+
     if (newRows.length > 0) {
-      var lastRow = sheet.getLastRow();
-      var targetRange = sheet.getRange(lastRow + 1, 1, newRows.length, 6);
-      targetRange.setValues(newRows);
-      totalWritten += newRows.length;
-      var ids = newRows.map(function(row) { return row[0]; });
-      lastId = Math.max.apply(null, ids);
+      buffer = buffer.concat(newRows);
+      if (buffer.length >= CONFIG.WRITE_BATCH) {
+        _appendRows(sheet, buffer);
+        totalWritten += buffer.length;
+        buffer = [];
+      }
     }
 
-    if (data.records.length < CONFIG.BATCH_SIZE) break;
+    if (data.all_count) {
+      if ((page + 1) * CONFIG.TRACKING_LIMIT >= data.all_count) break;
+    } else {
+      if (data.data.length < CONFIG.TRACKING_LIMIT) break;
+    }
+
     page++;
+    Utilities.sleep(200);
+  }
+
+  if (buffer.length) {
+    _appendRows(sheet, buffer);
+    totalWritten += buffer.length;
   }
 
   props.deleteProperty('tracking_checkpoint');
-  props.setProperty('MAX_KNOWN_TRACKING_ID', String(lastId));
+  if (currentMax > maxKnownId) props.setProperty('MAX_KNOWN_TRACKING_ID', String(currentMax));
   SpreadsheetApp.getActiveSpreadsheet().toast('✅ تمت مزامنة ' + totalWritten + ' حالة تتبع جديدة', 'مزامنة التتبع', 5);
   return totalWritten;
 }
@@ -296,323 +334,251 @@ function syncTrackingWithReturn() {
 // ──────────────────────────────────────────────
 
 function _classifyStatus(status) {
-  if (!status) return 'معلق';
-  var s = status.toString().trim().toLowerCase();
-  return CONFIG.STATUS_MAP[s] || 'أخرى';
+  var s = (status || '').toString().toLowerCase().trim();
+  var M = CONFIG.STATUS_MAP;
+  if (M.delivered.some(function(k) { return s.indexOf(k) !== -1; })) return 'delivered';
+  if (M.returned.some(function(k) { return s.indexOf(k) !== -1; })) return 'returned';
+  if (M.transit.some(function(k) { return s.indexOf(k) !== -1; })) return 'transit';
+  if (M.delivery.some(function(k) { return s.indexOf(k) !== -1; })) return 'delivery';
+  return 'others';
+}
+
+function _computeMetrics(ordersSheet, trackingSheet, tz, todayStr) {
+  var m = {
+    ordersToday: 0, revenueToday: 0,
+    totalOrders: 0, totalRevenue: 0,
+    totalTracking: 0, trackingRevenue: 0,
+    delivered: 0, returned: 0,
+    inTransit: 0, inDelivery: 0, others: 0,
+    wilayas: {}, products: {}, agents: {}, months: {}
+  };
+
+  if (ordersSheet && ordersSheet.getLastRow() > 1) {
+    var oData = ordersSheet.getRange(2, 1, ordersSheet.getLastRow() - 1, 10).getValues();
+    for (var oi = 0; oi < oData.length; oi++) {
+      var row = oData[oi];
+      var dateRaw = row[1];
+      var total = Number(row[7] || 0);
+      var dateStr = '';
+      if (dateRaw instanceof Date && !isNaN(dateRaw)) {
+        dateStr = Utilities.formatDate(dateRaw, tz, 'yyyy-MM-dd');
+      } else {
+        var cleanStr = String(dateRaw || '').trim().split('T')[0].split(' ')[0];
+        if (cleanStr.length >= 10) dateStr = cleanStr.substring(0, 10);
+      }
+      if (dateStr === todayStr || String(dateRaw).indexOf(todayStr) !== -1) {
+        m.ordersToday++;
+        m.revenueToday += total;
+      }
+    }
+  }
+
+  if (trackingSheet && trackingSheet.getLastRow() > 1) {
+    var tData = trackingSheet.getRange(2, 1, trackingSheet.getLastRow() - 1, 10).getValues();
+    m.totalTracking = tData.length;
+    for (var ti = 0; ti < tData.length; ti++) {
+      var tr = tData[ti];
+      var dateRaw = tr[1];
+      var agent = (tr[2] || '').toString().trim();
+      var wilaya = (tr[4] || '').toString().trim();
+      var status = (tr[5] || '').toString();
+      var product = (tr[6] || '').toString().trim();
+      var total = Number(tr[7] || 0);
+      var delivery = Number(tr[8] || 0);
+
+      m.totalOrders++;
+      m.totalRevenue += total;
+
+      var cls = _classifyStatus(status);
+      if (cls === 'delivered') { m.delivered++; m.trackingRevenue += (total - delivery); }
+      else if (cls === 'returned') { m.returned++; }
+      else if (cls === 'transit') { m.inTransit++; }
+      else if (cls === 'delivery') { m.inDelivery++; }
+      else { m.others++; }
+
+      if (agent) m.agents[agent] = (m.agents[agent] || 0) + 1;
+      if (wilaya) m.wilayas[wilaya] = (m.wilayas[wilaya] || 0) + 1;
+      if (product) m.products[product] = (m.products[product] || 0) + 1;
+
+      var monthStr = '';
+      if (dateRaw instanceof Date && !isNaN(dateRaw)) {
+        monthStr = Utilities.formatDate(dateRaw, tz, 'yyyy-MM');
+      } else {
+        var s = String(dateRaw || '').trim().split('T')[0].split(' ')[0];
+        if (s.length >= 7) monthStr = s.substring(0, 7);
+      }
+      if (monthStr) {
+        if (!m.months[monthStr]) m.months[monthStr] = { count: 0, revenue: 0 };
+        m.months[monthStr].count++;
+        m.months[monthStr].revenue += total;
+      }
+    }
+  }
+
+  return m;
 }
 
 function buildDashboard() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ordersSheet = ss.getSheetByName('Orders');
   var trackingSheet = ss.getSheetByName('Tracking');
-  if (!ordersSheet) throw new Error('❌ ورقة "Orders" غير موجودة. شغّل مزامنة الطلبات أولاً.');
+  var dashSheet = ss.getSheetByName('Dashboard');
 
-  // ── Read Orders ──
-  var ordersData = ordersSheet.getDataRange().getValues();
-  var orders = [];
-  for (var i = 1; i < ordersData.length; i++) {
-    orders.push({
-      id: ordersData[i][0],
-      date: ordersData[i][1],
-      customer: ordersData[i][2],
-      phone: ordersData[i][3],
-      wilaya: ordersData[i][4],
-      status: ordersData[i][5],
-      product: ordersData[i][6],
-      total: Number(ordersData[i][7]) || 0,
-      delivery: Number(ordersData[i][8]) || 0,
-      agent: ordersData[i][9],
-    });
+  if (!dashSheet) {
+    ss.toast('❌ شيت Dashboard غير موجود!', 'خطأ', 5);
+    return;
   }
 
-  // ── Read Tracking ──
-  var trackingMap = {};
-  if (trackingSheet) {
-    var trackData = trackingSheet.getDataRange().getValues();
-    for (var t = 1; t < trackData.length; t++) {
-      var orderId = Number(trackData[t][1]) || 0;
-      if (!trackingMap[orderId]) trackingMap[orderId] = [];
-      trackingMap[orderId].push({
-        id: trackData[t][0],
-        status: _classifyStatus(trackData[t][2]),
-        date: trackData[t][3],
-        wilaya: trackData[t][4],
-        note: trackData[t][5],
-      });
-    }
-  }
+  var tz = Session.getScriptTimeZone();
+  var today = new Date();
+  var todayStr = Utilities.formatDate(today, tz, 'yyyy-MM-dd');
 
-  // ── Compute KPIs ──
-  var totalOrders = orders.length;
-  var totalRevenue = 0;
-  var confirmedCount = 0;
-  var failedCount = 0;
-  var pendingCount = 0;
-  var waitingCount = 0;
-  var totalDeliveryFees = 0;
-  var productMap = {};
-  var wilayaMap = {};
-  var agentMap = {};
-  var monthlyMap = {};
+  var m = _computeMetrics(ordersSheet, trackingSheet, tz, todayStr);
 
-  for (var o = 0; o < orders.length; o++) {
-    var order = orders[o];
-    var status = order.status.toString().trim();
+  dashSheet.clearContents();
+  dashSheet.clearFormats();
+  dashSheet.getCharts().forEach(function(c) { dashSheet.removeChart(c); });
 
-    if (status === 'مؤكدة' || status === 'Confirmed') {
-      confirmedCount++;
-      totalRevenue += order.total;
-      totalDeliveryFees += order.delivery;
-    } else if (status === 'فاشلة' || status === 'فاشلة 01' || status === 'فاشلة 02' || status === 'Failed') {
-      failedCount++;
-    } else if (status === 'قيد الانتظار' || status === 'Pending') {
-      pendingCount++;
-    } else {
-      waitingCount++;
-    }
+  // Header
+  dashSheet.getRange('A1:O1').merge()
+    .setValue('📊 لوحة التحكم التنفيذية — ' + Utilities.formatDate(today, tz, 'dd/MM/yyyy HH:mm'))
+    .setFontSize(14).setFontWeight('bold')
+    .setHorizontalAlignment('center')
+    .setBackground('#0f172a').setFontColor('#ffffff');
+  dashSheet.setRowHeight(1, 40);
 
-    // Product aggregation
-    if (order.product) {
-      productMap[order.product] = (productMap[order.product] || 0) + 1;
-    }
-
-    // Wilaya aggregation
-    if (order.wilaya) {
-      wilayaMap[order.wilaya] = (wilayaMap[order.wilaya] || 0) + 1;
-    }
-
-    // Agent aggregation
-    if (order.agent) {
-      if (!agentMap[order.agent]) agentMap[order.agent] = { total: 0, confirmed: 0, revenue: 0 };
-      agentMap[order.agent].total++;
-      if (status === 'مؤكدة' || status === 'Confirmed') {
-        agentMap[order.agent].confirmed++;
-        agentMap[order.agent].revenue += order.total;
-      }
-    }
-
-    // Monthly aggregation (last 6 months)
-    if (order.date) {
-      var d = new Date(order.date);
-      if (!isNaN(d.getTime())) {
-        var monthKey = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-        if (!monthlyMap[monthKey]) monthlyMap[monthKey] = { orders: 0, confirmed: 0, revenue: 0, failed: 0 };
-        monthlyMap[monthKey].orders++;
-        if (status === 'مؤكدة' || status === 'Confirmed') {
-          monthlyMap[monthKey].confirmed++;
-          monthlyMap[monthKey].revenue += order.total;
-        }
-        if (status === 'فاشلة' || status === 'فاشلة 01' || status === 'فاشلة 02' || status === 'Failed') {
-          monthlyMap[monthKey].failed++;
-        }
-      }
-    }
-  }
-
-  var cancellationRate = totalOrders > 0 ? (failedCount / totalOrders) * 100 : 0;
-  var confirmedRate = totalOrders > 0 ? (confirmedCount / totalOrders) * 100 : 0;
-  var avgOrderValue = confirmedCount > 0 ? totalRevenue / confirmedCount : 0;
-  var netAfterDelivery = totalRevenue - totalDeliveryFees;
-
-  // ── Tracking KPIs ──
-  var deliveredCount = 0;
-  var returnedCount = 0;
-  var inTransitCount = 0;
-  var cancelledCount = 0;
-  var trackingRevenue = 0;
-
-  if (trackingSheet) {
-    for (var tr = 1; tr < trackData.length; tr++) {
-      var tStatus = _classifyStatus(trackData[tr][2]);
-      if (tStatus === 'تم التوصيل') {
-        deliveredCount++;
-        var tOrderId = Number(trackData[tr][1]) || 0;
-        if (tOrderId) {
-          var tOrder = orders.find(function(o) { return Number(o.id) === tOrderId; });
-          if (tOrder && (tOrder.status === 'مؤكدة' || tOrder.status === 'Confirmed')) {
-            trackingRevenue += tOrder.total - tOrder.delivery;
-          }
-        }
-      } else if (tStatus === 'مرتجع') {
-        returnedCount++;
-      } else if (tStatus === 'قيد التوصيل') {
-        inTransitCount++;
-      } else if (tStatus === 'ملغي') {
-        cancelledCount++;
-      }
-    }
-  }
-
-  var deliveryRate = (deliveredCount + returnedCount) > 0 ? (deliveredCount / (deliveredCount + returnedCount)) * 100 : 0;
-  var returnRate = (deliveredCount + returnedCount) > 0 ? (returnedCount / (deliveredCount + returnedCount)) * 100 : 0;
-
-  // ── Top 15 Wilayas ──
-  var wilayaSorted = Object.keys(wilayaMap).sort(function(a, b) { return wilayaMap[b] - wilayaMap[a]; }).slice(0, 15);
-
-  // ── Top 10 Products ──
-  var productSorted = Object.keys(productMap).sort(function(a, b) { return productMap[b] - productMap[a]; }).slice(0, 10);
-
-  // ── Top 12 Agents with medals ──
-  var agentSorted = Object.keys(agentMap).sort(function(a, b) { return agentMap[b].confirmed - agentMap[a].confirmed; });
-  var topAgents = agentSorted.slice(0, 12);
-  function agentMedal(index) {
-    if (index === 0) return '🥇';
-    if (index === 1) return '🥈';
-    if (index === 2) return '🥉';
-    return (index + 1) + '.';
-  }
-
-  // ── Last 6 Months (sorted) ──
-  var monthKeys = Object.keys(monthlyMap).sort();
-  var last6 = monthKeys.slice(-6);
-
-  // ── Build Dashboard sheet ──
-  var dash = ensureSheet_('Dashboard', []);
-  dash.clear();
-
-  // Title
-  dash.getRange('A1').setValue('📊 لوحة بيانات المبيعات');
-  dash.getRange('A1').setFontSize(20).setFontWeight('bold');
-  dash.mergeCells('A1:H1');
-  dash.getRange('A1').setHorizontalAlignment('center');
-  dash.getRange('A2').setFormula('="آخر تحديث: " & NOW()');
-  dash.getRange('A2').setFontSize(10).setFontColor('#666666');
-  dash.mergeCells('A2:H2');
-  dash.getRange('A2').setHorizontalAlignment('center');
-
-  // ── KPI Row (Row 4) ──
-  var kpiHeaders = ['العدد الإجمالي', 'الإيراد الإجمالي', 'المؤكدة', '% الإلغاء', 'متوسط الطلب', 'صافي بعد الشحن', '% التوصيل', '% المرتجعات', 'تم التوصيل', 'مرتجع', 'قيد التوصيل', 'ملغي', 'الطلبات/اليوم', 'إيراد التتبع'];
-  for (var kh = 0; kh < kpiHeaders.length; kh++) {
-    var cell = dash.getRange(4, kh + 1);
-    cell.setValue(kpiHeaders[kh]);
-    cell.setBackground('#0f172a').setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center');
-  }
-
-  var todayOrders = 0;
-  var todayStr = Utilities.formatDate(new Date(), 'Africa/Algiers', 'yyyy-MM-dd');
-  for (var to = 0; to < orders.length; to++) {
-    if (orders[to].date && orders[to].date.indexOf(todayStr) === 0) todayOrders++;
-  }
-
-  var kpiValues = [
-    totalOrders,
-    totalRevenue,
-    confirmedCount,
-    cancellationRate.toFixed(1) + '%',
-    Math.round(avgOrderValue),
-    netAfterDelivery,
-    deliveryRate.toFixed(1) + '%',
-    returnRate.toFixed(1) + '%',
-    deliveredCount,
-    returnedCount,
-    inTransitCount,
-    cancelledCount,
-    todayOrders,
-    Math.round(trackingRevenue),
+  // Section titles
+  var sections = [
+    ['A2', 'B2', '💰 مؤشرات الأداء الرئيسية', '#1e3a8a', '#dbeafe'],
+    ['D2', 'E2', '🗺️ أعلى 15 ولاية طلباً', '#065f46', '#d1fae5'],
+    ['G2', 'H2', '🔥 أعلى 10 منتجات', '#7c2d12', '#fee2e2'],
+    ['J2', 'K2', '👤 أداء الوكلاء', '#4c1d95', '#ede9fe'],
+    ['M2', 'O2', '📅 تقرير الأشهر (آخر 6)', '#1e40af', '#bfdbfe'],
   ];
-  for (var kv = 0; kv < kpiValues.length; kv++) {
-    var vCell = dash.getRange(5, kv + 1);
-    vCell.setValue(kpiValues[kv]);
-    vCell.setFontSize(14).setFontWeight('bold').setHorizontalAlignment('center');
-    var colLetter = String.fromCharCode(65 + kv);
-    dash.getRange(colLetter + '4:' + colLetter + '5').setBorder(true, true, true, true, false, false);
+  for (var si = 0; si < sections.length; si++) {
+    var s = sections[si];
+    dashSheet.getRange(s[0] + ':' + s[1]).merge()
+      .setValue(s[2]).setFontSize(10).setFontWeight('bold')
+      .setHorizontalAlignment('center').setBackground(s[3]).setFontColor(s[4]);
+  }
+  dashSheet.setRowHeight(2, 28);
+
+  // Column headers
+  var colHeaders = [
+    ['A3', 'المؤشر'], ['B3', 'القيمة'],
+    ['D3', 'الولاية'], ['E3', 'الطلبيات'],
+    ['G3', 'المنتج'], ['H3', 'الطلبيات'],
+    ['J3', 'الوكيل'], ['K3', 'الطلبات المؤكدة'],
+    ['M3', 'الشهر'], ['N3', 'الطلبيات'], ['O3', 'المداخيل'],
+  ];
+  for (var ci = 0; ci < colHeaders.length; ci++) {
+    dashSheet.getRange(colHeaders[ci][0])
+      .setValue(colHeaders[ci][1]).setFontWeight('bold')
+      .setBackground('#e2e8f0').setHorizontalAlignment('center');
+  }
+  dashSheet.setRowHeight(3, 24);
+
+  // KPIs
+  var avgOrder = m.totalOrders > 0 ? (m.totalRevenue / m.totalOrders) : 0;
+  var deliveryRate = m.totalTracking > 0 ? (m.delivered / m.totalTracking) : 0;
+  var returnRate = m.totalTracking > 0 ? (m.returned / m.totalTracking) : 0;
+  var pendingOrders = m.inTransit + m.inDelivery;
+
+  var kpis = [
+    ['📅 طلبات اليوم', m.ordersToday, '#,##0'],
+    ['💵 مداخيل اليوم', m.revenueToday, '#,##0" DA"'],
+    ['📊 إجمالي الطلبات', m.totalOrders, '#,##0'],
+    ['📈 إجمالي المبيعات', m.totalRevenue, '#,##0" DA"'],
+    ['💵 متوسط قيمة الطلب', avgOrder, '#,##0" DA"'],
+    ['📦 إجمالي المشحون', m.totalTracking, '#,##0'],
+    ['💸 صافي الأرباح (Livré)', m.trackingRevenue, '#,##0" DA"'],
+    ['✅ مسلمة (Livré)', m.delivered, '#,##0'],
+    ['❌ مرجعة (Retour/Refus)', m.returned, '#,##0'],
+    ['⏳ في الطريق (Transit)', m.inTransit, '#,##0'],
+    ['🚚 قيد التوصيل (Livraison)', m.inDelivery, '#,##0'],
+    ['⚙️ أخرى / معالجة', m.others, '#,##0'],
+    ['📉 نسبة التسليم', deliveryRate, '0.00%'],
+    ['📤 نسبة الإرجاع', returnRate, '0.00%'],
+    ['🔄 طلبات في الانتظار', pendingOrders, '#,##0'],
+  ];
+
+  for (var ki = 0; ki < kpis.length; ki++) {
+    var row = ki + 4;
+    var bg = ki % 2 === 0 ? '#f8fafc' : '#ffffff';
+    dashSheet.getRange(row, 1).setValue(kpis[ki][0]).setFontSize(9).setHorizontalAlignment('right').setBackground(bg);
+    var vCell = dashSheet.getRange(row, 2);
+    vCell.setValue(kpis[ki][1]).setFontWeight('bold').setNumberFormat(kpis[ki][2]).setHorizontalAlignment('center').setBackground(bg);
   }
 
-  // ── Chart 1: Shipping Status PIE (Row 7) ──
-  var pieLabels = ['تم التوصيل', 'مرتجع', 'قيد التوصيل', 'ملغي', 'معلق'];
-  var pieValues = [deliveredCount, returnedCount, inTransitCount, cancelledCount, 0];
-  for (var pi = 7; pi <= 7 + pieLabels.length - 1; pi++) {
-    dash.getRange(pi, 1).setValue(pieLabels[pi - 7]);
-    dash.getRange(pi, 2).setValue(pieValues[pi - 7]);
-  }
-  dash.getRange('A6:B6').setValues([['حالة الشحن', 'العدد']]);
-  dash.getRange('A6:B6').setBackground('#0f172a').setFontColor('#ffffff').setFontWeight('bold');
+  dashSheet.setColumnWidth(1, 230);
+  dashSheet.setColumnWidth(2, 140);
 
-  var pieChart = dash.newChart()
+  // Top 15 Wilayas
+  var wilayaKeys = Object.keys(m.wilayas).sort(function(a, b) { return m.wilayas[b] - m.wilayas[a]; }).slice(0, 15);
+  for (var wi = 0; wi < wilayaKeys.length; wi++) {
+    var wr = wi + 4;
+    dashSheet.getRange(wr, 4).setValue(wilayaKeys[wi]).setBackground(wi % 2 === 0 ? '#f0fdf4' : '#ffffff').setHorizontalAlignment('right');
+    dashSheet.getRange(wr, 5).setValue(m.wilayas[wilayaKeys[wi]]).setBackground(wi % 2 === 0 ? '#f0fdf4' : '#ffffff').setHorizontalAlignment('center').setFontWeight('bold').setNumberFormat('#,##0');
+  }
+
+  // Top 10 Products
+  var productKeys = Object.keys(m.products).sort(function(a, b) { return m.products[b] - m.products[a]; }).slice(0, 10);
+  for (var pi = 0; pi < productKeys.length; pi++) {
+    var pr = pi + 4;
+    dashSheet.getRange(pr, 7).setValue(productKeys[pi]).setBackground(pi % 2 === 0 ? '#fff7ed' : '#ffffff').setHorizontalAlignment('right');
+    dashSheet.getRange(pr, 8).setValue(m.products[productKeys[pi]]).setBackground(pi % 2 === 0 ? '#fff7ed' : '#ffffff').setHorizontalAlignment('center').setFontWeight('bold').setNumberFormat('#,##0');
+  }
+
+  // Top 12 Agents
+  var agentKeys = Object.keys(m.agents).sort(function(a, b) { return m.agents[b] - m.agents[a]; }).slice(0, 12);
+  for (var ai = 0; ai < agentKeys.length; ai++) {
+    var ar = ai + 4;
+    var medal = ai === 0 ? '🥇 ' : ai === 1 ? '🥈 ' : ai === 2 ? '🥉 ' : '';
+    dashSheet.getRange(ar, 10).setValue(medal + agentKeys[ai]).setBackground(ai % 2 === 0 ? '#f5f3ff' : '#ffffff').setHorizontalAlignment('right');
+    dashSheet.getRange(ar, 11).setValue(m.agents[agentKeys[ai]]).setBackground(ai % 2 === 0 ? '#f5f3ff' : '#ffffff').setHorizontalAlignment('center').setFontWeight('bold').setNumberFormat('#,##0');
+  }
+
+  // Last 6 months
+  var monthKeys = Object.keys(m.months).sort().slice(-6);
+  for (var mi = 0; mi < monthKeys.length; mi++) {
+    var mr = mi + 4;
+    var md = m.months[monthKeys[mi]];
+    var mbg = mi % 2 === 0 ? '#eff6ff' : '#ffffff';
+    dashSheet.getRange(mr, 13).setValue(monthKeys[mi]).setBackground(mbg).setHorizontalAlignment('center');
+    dashSheet.getRange(mr, 14).setValue(md.count).setBackground(mbg).setHorizontalAlignment('center').setFontWeight('bold').setNumberFormat('#,##0');
+    dashSheet.getRange(mr, 15).setValue(md.revenue).setBackground(mbg).setHorizontalAlignment('center').setFontWeight('bold').setNumberFormat('#,##0" DA"');
+  }
+
+  // Pie chart data
+  var pieData = dashSheet.getRange('Z90:AA94');
+  pieData.setValues([
+    ['المسلمة', m.delivered],
+    ['المرجعة', m.returned],
+    ['في الطريق', m.inTransit],
+    ['قيد التوصيل', m.inDelivery],
+    ['أخرى', m.others],
+  ]);
+
+  dashSheet.insertChart(dashSheet.newChart()
     .setChartType(Charts.ChartType.PIE)
-    .addRange(dash.getRange('A7:B11'))
-    .setPosition(7, 4, 0, 0)
-    .setOption('title', 'توزيع حالات الشحن')
-    .setOption('pieSliceText', 'label')
-    .setOption('width', 400).setOption('height', 280)
-    .build();
-  dash.insertChart(pieChart);
+    .addRange(pieData)
+    .setPosition(4, 17, 0, 0)
+    .setOption('title', 'نسب حالات الشحن')
+    .setOption('is3D', true)
+    .setOption('width', 420).setOption('height', 280)
+    .setOption('slices', {0: {color:'#10b981'}, 1: {color:'#ef4444'}, 2: {color:'#f59e0b'}, 3: {color:'#3b82f6'}, 4: {color:'#94a3b8'}})
+    .build());
 
-  // ── Chart 2: Top 15 Wilayas BAR ──
-  for (var w = 0; w < wilayaSorted.length; w++) {
-    dash.getRange(7 + w, 7).setValue(wilayaSorted[w]);
-    dash.getRange(7 + w, 8).setValue(wilayaMap[wilayaSorted[w]]);
+  if (wilayaKeys.length > 0) {
+    dashSheet.insertChart(dashSheet.newChart()
+      .setChartType(Charts.ChartType.BAR)
+      .addRange(dashSheet.getRange(3, 4, wilayaKeys.length + 1, 2))
+      .setPosition(19, 17, 0, 0)
+      .setOption('title', 'توزيع الطلبيات حسب الولاية')
+      .setOption('colors', ['#1e3a8a']).setOption('legend', {position:'none'})
+      .setOption('width', 420).setOption('height', 320)
+      .build());
   }
-  dash.getRange('F6:G6').setValues([['الولاية', 'العدد']]);
-  dash.getRange('F6:G6').setBackground('#0f172a').setFontColor('#ffffff').setFontWeight('bold');
-
-  var barChart = dash.newChart()
-    .setChartType(Charts.ChartType.BAR)
-    .addRange(dash.getRange('F7:G21'))
-    .setPosition(7, 9, 0, 0)
-    .setOption('title', 'أفضل 15 ولاية')
-    .setOption('width', 500).setOption('height', 350)
-    .setOption('hAxis', { title: 'عدد الطلبات' })
-    .setOption('vAxis', { title: 'الولاية' })
-    .build();
-  dash.insertChart(barChart);
-
-  // ── Chart 3: Top 10 Products COLUMN ──
-  for (var p = 0; p < productSorted.length; p++) {
-    dash.getRange(7 + p, 12).setValue(productSorted[p]);
-    dash.getRange(7 + p, 13).setValue(productMap[productSorted[p]]);
-  }
-  dash.getRange('L6:M6').setValues([['المنتج', 'العدد']]);
-  dash.getRange('L6:M6').setBackground('#0f172a').setFontColor('#ffffff').setFontWeight('bold');
-
-  var colChart = dash.newChart()
-    .setChartType(Charts.ChartType.COLUMN)
-    .addRange(dash.getRange('L7:M16'))
-    .setPosition(22, 1, 0, 0)
-    .setOption('title', 'أفضل 10 منتجات')
-    .setOption('width', 600).setOption('height', 300)
-    .setOption('hAxis', { title: 'المنتج', textStyle: { fontSize: 9 } })
-    .setOption('vAxis', { title: 'عدد الطلبات' })
-    .build();
-  dash.insertChart(colChart);
-
-  // ── Chart 4: Monthly Trend LINE (last 6 months) ──
-  for (var m = 0; m < last6.length; m++) {
-    var mo = monthlyMap[last6[m]];
-    dash.getRange(7 + m, 15).setValue(last6[m]);
-    dash.getRange(7 + m, 16).setValue(mo.orders);
-    dash.getRange(7 + m, 17).setValue(mo.confirmed);
-    dash.getRange(7 + m, 18).setValue(mo.revenue);
-  }
-  dash.getRange('O6:R6').setValues([['الشهر', 'الطلبات', 'المؤكدة', 'الإيراد']]);
-  dash.getRange('O6:R6').setBackground('#0f172a').setFontColor('#ffffff').setFontWeight('bold');
-
-  var lineChart = dash.newChart()
-    .setChartType(Charts.ChartType.LINE)
-    .addRange(dash.getRange('O7:R12'))
-    .setPosition(22, 8, 0, 0)
-    .setOption('title', 'الاتجاه الشهري (آخر 6 أشهر)')
-    .setOption('width', 600).setOption('height', 300)
-    .setOption('curveType', 'function')
-    .setOption('legend', { position: 'bottom' })
-    .build();
-  dash.insertChart(lineChart);
-
-  // ── Top 12 Agents Table (Row 30) ──
-  dash.getRange('A30:D30').setValues([['الوكيل', 'الطلبات', 'المؤكدة', 'الإيراد']]);
-  dash.getRange('A30:D30').setBackground('#0f172a').setFontColor('#ffffff').setFontWeight('bold');
-  for (var a = 0; a < topAgents.length; a++) {
-    var ag = agentMap[topAgents[a]];
-    dash.getRange(31 + a, 1).setValue(agentMedal(a) + ' ' + topAgents[a]);
-    dash.getRange(31 + a, 2).setValue(ag.total);
-    dash.getRange(31 + a, 3).setValue(ag.confirmed);
-    dash.getRange(31 + a, 4).setValue(ag.revenue);
-  }
-
-  // ── Formatting ──
-  dash.getRange('A1:H2').setHorizontalAlignment('center');
-  dash.setColumnWidths(1, 18, 140);
-  dash.getDataRange().setVerticalAlignment('middle');
 
   SpreadsheetApp.getActiveSpreadsheet().toast('✅ تم بناء لوحة البيانات بنجاح', 'لوحة البيانات', 5);
 }
@@ -623,210 +589,214 @@ function buildDashboard() {
 
 function setupFiltersSheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var filterSheet = ss.getSheetByName('Filters');
-  if (!filterSheet) {
-    filterSheet = ss.insertSheet('Filters');
-  } else {
-    filterSheet.clear();
+  var fSheet = ss.getSheetByName('Filters');
+  if (!fSheet) fSheet = ss.insertSheet('Filters');
+
+  fSheet.clearContents();
+  fSheet.clearFormats();
+
+  fSheet.getRange('A1:D1').merge()
+    .setValue('🔍 لوحة الفلترة الشاملة — اختر الفلاتر ثم اضغط زر التقرير')
+    .setFontSize(13).setFontWeight('bold')
+    .setBackground('#0f172a').setFontColor('#ffffff')
+    .setHorizontalAlignment('center');
+  fSheet.setRowHeight(1, 38);
+
+  var filterLabels = [
+    ['B3', '🗺️ الولاية (Wilaya)'],
+    ['B4', '👤 الوكيل (Agent)'],
+    ['B5', '📦 المنتج (Product)'],
+    ['B6', '📅 تاريخ البداية (YYYY-MM-DD)'],
+    ['B7', '📅 تاريخ النهاية (YYYY-MM-DD)'],
+  ];
+  for (var fi = 0; fi < filterLabels.length; fi++) {
+    fSheet.getRange(filterLabels[fi][0]).setValue(filterLabels[fi][1])
+      .setFontWeight('bold').setHorizontalAlignment('right').setBackground('#e2e8f0');
   }
 
-  filterSheet.getRange('A1').setValue('🔍 تصفية البيانات').setFontSize(16).setFontWeight('bold');
-  filterSheet.mergeCells('A1:D1');
-  filterSheet.getRange('A1').setHorizontalAlignment('center');
-
-  filterSheet.getRange('A3').setValue('الولاية');
-  filterSheet.getRange('A4').setValue('الوكيل');
-  filterSheet.getRange('A5').setValue('المنتج');
-  filterSheet.getRange('A6').setValue('من تاريخ');
-  filterSheet.getRange('A7').setValue('إلى تاريخ');
-
-  filterSheet.getRange('A3:A7').setFontWeight('bold').setBackground('#f0f0f0');
-
-  // Default date range = last 30 days
-  var now = new Date();
-  var thirtyAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  filterSheet.getRange('B3').setValue('الكل');
-  filterSheet.getRange('B4').setValue('الكل');
-  filterSheet.getRange('B5').setValue('الكل');
-  filterSheet.getRange('B6').setValue(Utilities.formatDate(thirtyAgo, 'Africa/Algiers', 'yyyy-MM-dd'));
-  filterSheet.getRange('B7').setValue(Utilities.formatDate(now, 'Africa/Algiers', 'yyyy-MM-dd'));
+  fSheet.getRange('C3:C7').setBackground('#fefce8').setHorizontalAlignment('center')
+    .setBorder(true, true, true, true, false, false, '#94a3b8', SpreadsheetApp.BorderStyle.SOLID);
+  fSheet.getRange('C3').setValue('الكل');
+  fSheet.getRange('C4').setValue('الكل');
+  fSheet.getRange('C5').setValue('الكل');
+  fSheet.getRange('C6').setValue('');
+  fSheet.getRange('C7').setValue('');
 
   refreshFilterDropdowns();
 
-  filterSheet.getRange('B3:B7').setBorder(true, true, true, true, false, false);
-  filterSheet.setColumnWidths(1, 2, 150);
+  fSheet.getRange('B9:D9').merge().setValue('💡 اترك الحقل فارغاً أو اكتب "الكل" لعدم تطبيق فلتر على هذا الحقل.').setFontSize(9).setFontColor('#64748b').setHorizontalAlignment('center');
+  fSheet.getRange('B10:D10').merge().setValue('▶️ بعد الاختيار، شغّل الدالة: buildFilteredReport() من القائمة').setFontSize(9).setFontWeight('bold').setFontColor('#1d4ed8').setHorizontalAlignment('center');
 
-  ss.toast('✅ تم إعداد ورقة الفلاتر', 'الفلاتر', 3);
+  fSheet.setColumnWidth(2, 220);
+  fSheet.setColumnWidth(3, 200);
+  ss.toast('✅ تم إعداد شيت الفلاتر', 'الفلاتر', 3);
 }
 
 function refreshFilterDropdowns() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var ordersSheet = ss.getSheetByName('Orders');
-  var filterSheet = ss.getSheetByName('Filters');
-  if (!ordersSheet || !filterSheet) return;
+  var fSheet = ss.getSheetByName('Filters');
+  if (!fSheet) return;
 
-  var data = ordersSheet.getDataRange().getValues();
-  var wilayaSet = {};
-  var agentSet = {};
-  var productSet = {};
+  var trackingSheet = ss.getSheetByName('Tracking');
+  var wilayas = [], agents = [], products = [];
 
-  for (var i = 1; i < data.length; i++) {
-    if (data[i][4]) wilayaSet[data[i][4]] = true;
-    if (data[i][9]) agentSet[data[i][9]] = true;
-    if (data[i][6]) productSet[data[i][6]] = true;
+  if (trackingSheet && trackingSheet.getLastRow() > 1) {
+    var data = trackingSheet.getRange(2, 1, trackingSheet.getLastRow() - 1, 10).getValues();
+    var wSet = {}, aSet = {}, pSet = {};
+    for (var i = 0; i < data.length; i++) {
+      var w = (data[i][4] || '').toString().trim();
+      var a = (data[i][2] || '').toString().trim();
+      var p = (data[i][6] || '').toString().trim();
+      if (w) wSet[w] = true;
+      if (a) aSet[a] = true;
+      if (p) pSet[p] = true;
+    }
+    wilayas = Object.keys(wSet).sort();
+    agents = Object.keys(aSet).sort();
+    products = Object.keys(pSet).sort();
   }
 
-  var wilayas = ['الكل'].concat(Object.keys(wilayaSet).sort());
-  var agents = ['الكل'].concat(Object.keys(agentSet).sort());
-  var products = ['الكل'].concat(Object.keys(productSet).sort());
-
-  var wilayaRule = SpreadsheetApp.newDataValidation().requireValueInList(wilayas, true).build();
-  var agentRule = SpreadsheetApp.newDataValidation().requireValueInList(agents, true).build();
-  var productRule = SpreadsheetApp.newDataValidation().requireValueInList(products, true).build();
-
-  filterSheet.getRange('B3').setDataValidation(wilayaRule);
-  filterSheet.getRange('B4').setDataValidation(agentRule);
-  filterSheet.getRange('B5').setDataValidation(productRule);
+  var all = ['الكل'];
+  var mkRule = function(list) {
+    return SpreadsheetApp.newDataValidation().requireValueInList(all.concat(list), true).setAllowInvalid(true).build();
+  };
+  fSheet.getRange('C3').setDataValidation(mkRule(wilayas));
+  fSheet.getRange('C4').setDataValidation(mkRule(agents));
+  fSheet.getRange('C5').setDataValidation(mkRule(products));
 }
-
-// ──────────────────────────────────────────────
-//  5. FILTERED REPORT
-// ──────────────────────────────────────────────
 
 function buildFilteredReport() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var ordersSheet = ss.getSheetByName('Orders');
+  var fSheet = ss.getSheetByName('Filters');
+  if (!fSheet) {
+    SpreadsheetApp.getUi().alert('❌ شيت Filters غير موجود! شغّل setupFiltersSheet() أولاً.');
+    return;
+  }
+
+  var filterWilaya = fSheet.getRange('C3').getValue().toString().trim();
+  var filterAgent = fSheet.getRange('C4').getValue().toString().trim();
+  var filterProduct = fSheet.getRange('C5').getValue().toString().trim();
+  var filterStart = fSheet.getRange('C6').getValue().toString().trim();
+  var filterEnd = fSheet.getRange('C7').getValue().toString().trim();
+
+  var useWilaya = filterWilaya && filterWilaya !== 'الكل';
+  var useAgent = filterAgent && filterAgent !== 'الكل';
+  var useProduct = filterProduct && filterProduct !== 'الكل';
+  var useStart = filterStart.length === 10;
+  var useEnd = filterEnd.length === 10;
+
   var trackingSheet = ss.getSheetByName('Tracking');
-  var filterSheet = ss.getSheetByName('Filters');
-  if (!ordersSheet || !filterSheet) throw new Error('❌ تأكد من وجود ورقة Orders و Filters');
-
-  var filterWilaya = filterSheet.getRange('B3').getValue().toString().trim();
-  var filterAgent = filterSheet.getRange('B4').getValue().toString().trim();
-  var filterProduct = filterSheet.getRange('B5').getValue().toString().trim();
-  var filterDateFrom = filterSheet.getRange('B6').getValue();
-  var filterDateTo = filterSheet.getRange('B7').getValue();
-
-  var ordersData = ordersSheet.getDataRange().getValues();
-  var filteredOrders = [];
-  var totalFilteredRevenue = 0;
-  var totalFilteredDelivery = 0;
-  var filteredConfirmed = 0;
-  var filteredFailed = 0;
-  var productFilterMap = {};
-  var wilayaFilterMap = {};
-
-  for (var i = 1; i < ordersData.length; i++) {
-    var row = ordersData[i];
-    var orderDate = row[1] ? row[1].toString() : '';
-
-    if (filterWilaya !== 'الكل' && row[4] !== filterWilaya) continue;
-    if (filterAgent !== 'الكل' && row[9] !== filterAgent) continue;
-    if (filterProduct !== 'الكل' && row[6] !== filterProduct) continue;
-    if (filterDateFrom && orderDate < filterDateFrom) continue;
-    if (filterDateTo && orderDate > filterDateTo) continue;
-
-    filteredOrders.push(row);
-    var status = row[5].toString().trim();
-    if (status === 'مؤكدة' || status === 'Confirmed') {
-      totalFilteredRevenue += Number(row[7]) || 0;
-      totalFilteredDelivery += Number(row[8]) || 0;
-      filteredConfirmed++;
-    }
-    if (status === 'فاشلة' || status === 'فاشلة 01' || status === 'فاشلة 02' || status === 'Failed') {
-      filteredFailed++;
-    }
-
-    if (row[6]) productFilterMap[row[6]] = (productFilterMap[row[6]] || 0) + 1;
-    if (row[4]) wilayaFilterMap[row[4]] = (wilayaFilterMap[row[4]] || 0) + 1;
+  if (!trackingSheet || trackingSheet.getLastRow() < 2) {
+    SpreadsheetApp.getUi().alert('❌ شيت Tracking فارغ!');
+    return;
   }
 
-  // ── Write FilteredView ──
-  var fv = ensureSheet_('FilteredView', []);
+  var tz = Session.getScriptTimeZone();
+  var data = trackingSheet.getRange(2, 1, trackingSheet.getLastRow() - 1, 10).getValues();
+  var filtered = [];
 
-  var fvHeaders = ['Order ID', 'Date', 'Customer', 'Phone', 'Wilaya', 'Status', 'Product', 'Total', 'Delivery', 'Agent'];
-  fv.clear();
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var dateRaw = row[1];
+    var agent = (row[2] || '').toString().trim();
+    var wilaya = (row[4] || '').toString().trim();
+    var product = (row[6] || '').toString().trim();
 
-  // Summary
-  fv.getRange('A1').setValue('📋 تقرير مفلتر').setFontSize(16).setFontWeight('bold');
-  fv.mergeCells('A1:J1');
-  fv.getRange('A1').setHorizontalAlignment('center');
-
-  fv.getRange('A3').setValue('عدد الطلبات');
-  fv.getRange('B3').setValue(filteredOrders.length);
-  fv.getRange('A4').setValue('الإيراد');
-  fv.getRange('B4').setValue(totalFilteredRevenue);
-  fv.getRange('A5').setValue('المؤكدة');
-  fv.getRange('B5').setValue(filteredConfirmed);
-  fv.getRange('A6').setValue('الفاشلة');
-  fv.getRange('B6').setValue(filteredFailed);
-  fv.getRange('A7').setValue('متوسط الطلب');
-  fv.getRange('B7').setValue(filteredConfirmed > 0 ? Math.round(totalFilteredRevenue / filteredConfirmed) : 0);
-  fv.getRange('A8').setValue('صافي الإيراد');
-  fv.getRange('B8').setValue(totalFilteredRevenue - totalFilteredDelivery);
-  fv.getRange('A9').setValue('% الإلغاء');
-  fv.getRange('B9').setValue(filteredOrders.length > 0 ? (filteredFailed / filteredOrders.length * 100).toFixed(1) + '%' : '0%');
-
-  fv.getRange('A3:A9').setFontWeight('bold').setBackground('#f0f0f0');
-  fv.getRange('B3:B9').setHorizontalAlignment('center').setFontWeight('bold');
-
-  // Top products in filtered view
-  var topProd = Object.keys(productFilterMap).sort(function(a, b) { return productFilterMap[b] - productFilterMap[a]; }).slice(0, 10);
-  fv.getRange('D3').setValue('أفضل المنتجات').setFontWeight('bold').setFontSize(12);
-  for (var tp = 0; tp < topProd.length; tp++) {
-    fv.getRange(4 + tp, 4).setValue(topProd[tp]);
-    fv.getRange(4 + tp, 5).setValue(productFilterMap[topProd[tp]]);
-  }
-
-  // Data table
-  var dataStartRow = 12;
-  fv.getRange(dataStartRow, 1, 1, 10).setValues([fvHeaders]);
-  fv.getRange(dataStartRow, 1, 1, 10).setBackground('#0f172a').setFontColor('#ffffff').setFontWeight('bold');
-
-  if (filteredOrders.length > 0) {
-    var dataRows = [];
-    for (var fr = 0; fr < filteredOrders.length; fr++) {
-      dataRows.push(filteredOrders[fr]);
+    var dateStr = '';
+    if (dateRaw instanceof Date && !isNaN(dateRaw)) {
+      dateStr = Utilities.formatDate(dateRaw, tz, 'yyyy-MM-dd');
+    } else {
+      dateStr = String(dateRaw || '').split('T')[0].split(' ')[0].substring(0, 10);
     }
-    fv.getRange(dataStartRow + 1, 1, dataRows.length, 10).setValues(dataRows);
+
+    if (useWilaya && wilaya !== filterWilaya) continue;
+    if (useAgent && agent !== filterAgent) continue;
+    if (useProduct && product !== filterProduct) continue;
+    if (useStart && dateStr < filterStart) continue;
+    if (useEnd && dateStr > filterEnd) continue;
+
+    filtered.push(row);
   }
 
-  fv.getDataRange().setVerticalAlignment('middle');
-  fv.setColumnWidths(1, 10, 120);
+  var viewSheet = ss.getSheetByName('FilteredView');
+  if (!viewSheet) viewSheet = ss.insertSheet('FilteredView');
+  viewSheet.clearContents();
+  viewSheet.clearFormats();
 
-  ss.toast('✅ تم بناء التقرير المفلتر: ' + filteredOrders.length + ' طلب', 'التقرير المفلتر', 5);
+  var titleParts = [];
+  if (useWilaya) titleParts.push('ولاية: ' + filterWilaya);
+  if (useAgent) titleParts.push('وكيل: ' + filterAgent);
+  if (useProduct) titleParts.push('منتج: ' + filterProduct);
+  if (useStart) titleParts.push('من: ' + filterStart);
+  if (useEnd) titleParts.push('إلى: ' + filterEnd);
+  var title = titleParts.length > 0 ? titleParts.join(' | ') : 'جميع السجلات (بدون فلتر)';
+
+  viewSheet.getRange('A1:J1').merge()
+    .setValue('📋 تقرير مُفلتر (Tracking) — ' + title)
+    .setFontSize(12).setFontWeight('bold')
+    .setBackground('#1e3a8a').setFontColor('#ffffff')
+    .setHorizontalAlignment('center');
+  viewSheet.setRowHeight(1, 36);
+
+  var colH = ['Order ID', 'التاريخ', 'الوكيل', 'العميل', 'الولاية', 'الحالة', 'المنتج', 'الإجمالي', 'الشحن', 'السائق'];
+  viewSheet.getRange(2, 1, 1, 10).setValues([colH]).setFontWeight('bold').setBackground('#dbeafe').setHorizontalAlignment('center');
+
+  if (filtered.length > 0) {
+    viewSheet.getRange(3, 1, filtered.length, 10).setValues(filtered);
+    viewSheet.getRange(3, 8, filtered.length, 1).setNumberFormat('#,##0" DA"');
+    viewSheet.getRange(3, 9, filtered.length, 1).setNumberFormat('#,##0" DA"');
+    for (var fi = 0; fi < filtered.length; fi++) {
+      viewSheet.getRange(fi + 3, 1, 1, 10).setBackground(fi % 2 === 0 ? '#f8fafc' : '#ffffff');
+    }
+  } else {
+    viewSheet.getRange('A3:J3').merge().setValue('⚠️ لا توجد نتائج تطابق الفلاتر المحددة.').setHorizontalAlignment('center').setFontColor('#dc2626').setFontSize(11);
+  }
+
+  var summaryRow = filtered.length + 5;
+  var totalFiltered = filtered.length;
+  var revFiltered = filtered.reduce(function(s, r) { return s + Number(r[7] || 0); }, 0);
+  var avgFiltered = totalFiltered > 0 ? revFiltered / totalFiltered : 0;
+  var tDelivered = 0, tReturned = 0, tInProgress = 0;
+  filtered.forEach(function(r) {
+    var cls = _classifyStatus(r[5]);
+    if (cls === 'delivered') tDelivered++;
+    else if (cls === 'returned') tReturned++;
+    else tInProgress++;
+  });
+
+  var summaryData = [
+    ['📊 ملخص التقرير المُفلتر', ''],
+    ['عدد السجلات', totalFiltered],
+    ['إجمالي المداخيل', revFiltered],
+    ['متوسط قيمة الطلب', avgFiltered],
+    ['✅ مسلمة', tDelivered],
+    ['❌ مرجعة', tReturned],
+    ['🔄 قيد المعالجة', tInProgress],
+  ];
+  viewSheet.getRange(summaryRow, 1, summaryData.length, 2).setValues(summaryData);
+  viewSheet.getRange(summaryRow, 1, 1, 2).merge().setFontWeight('bold').setBackground('#1e3a8a').setFontColor('#ffffff').setHorizontalAlignment('center');
+
+  ss.setActiveSheet(viewSheet);
+  SpreadsheetApp.getUi().alert('✅ تم إنشاء التقرير!\n\n📊 النتائج: ' + totalFiltered + ' سجل');
 }
 
 // ──────────────────────────────────────────────
-//  6. UPDATE ALL
+//  5. UPDATE ALL
 // ──────────────────────────────────────────────
 
 function updateAll() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   ss.toast('🔄 بدء التحديث الكامل...', 'تحديث', 3);
 
-  try {
-    syncOrdersWithReturn();
-  } catch (e) {
-    ss.toast('❌ فشلت مزامنة الطلبات: ' + e.message, 'خطأ', 10);
-  }
-
-  try {
-    syncTrackingWithReturn();
-  } catch (e) {
-    ss.toast('❌ فشلت مزامنة التتبع: ' + e.message, 'خطأ', 10);
-  }
-
-  try {
-    buildDashboard();
-  } catch (e) {
-    ss.toast('❌ فشل بناء لوحة البيانات: ' + e.message, 'خطأ', 10);
-  }
-
-  try {
-    refreshFilterDropdowns();
-  } catch (e) {
-    // non-critical
-  }
+  try { syncOrdersWithReturn(); } catch (e) { ss.toast('❌ فشلت مزامنة الطلبات: ' + e.message, 'خطأ', 10); }
+  try { syncTrackingWithReturn(); } catch (e) { ss.toast('❌ فشلت مزامنة التتبع: ' + e.message, 'خطأ', 10); }
+  try { buildDashboard(); } catch (e) { ss.toast('❌ فشل بناء لوحة البيانات: ' + e.message, 'خطأ', 10); }
+  try { refreshFilterDropdowns(); } catch (e) { /* non-critical */ }
 
   ss.toast('✅ تم التحديث الكامل', 'تحديث', 5);
+}
+
+function resetAllProperties() {
+  PropertiesService.getScriptProperties().deleteAllProperties();
+  Logger.log('✅ تم مسح كل الـ Properties');
 }

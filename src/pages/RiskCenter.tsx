@@ -7,12 +7,13 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { RiskMeter } from '@/components/shared/RiskMeter';
 import { calculatePricing } from '@/lib/financialEngine';
 import { getRiskDetail, calculatePortfolioRisk } from '@/lib/riskScore';
+import { normalizeStatus } from '@/lib/dashboardMetrics';
 import { formatCurrency, formatPercent } from '@/lib/utils';
 
 function makePricingInputs(product: string, orders: Order[]): PricingInputs {
   const productOrders = orders.filter(o => o.product === product);
   const total = productOrders.length;
-  const failed = productOrders.filter(o => o.status === 'Failed').length;
+  const failed = productOrders.filter(o => normalizeStatus(o.status) === 'Failed').length;
   const cancelRate = total > 0 ? (failed / total) * 100 : 37;
   const avgTotal = total > 0 ? productOrders.reduce((s, o) => s + o.total, 0) / total : 2000;
 
