@@ -62,25 +62,32 @@ export async function fetchTracking(): Promise<TrackingOrder[]> {
     .reduce((acc: TrackingOrder[], row: { c: { v: unknown; f?: string }[] | null }) => {
       const cells = row.c;
       if (!cells) return acc;
-      // GAS writes: [Tracking ID, Order ID, Status, Date, Wilaya, Agent, Customer, Product, Total, Delivery]
-      const orderId = String(cells[1]?.v || '');
+      // gviz columns: [0] Order ID | [1] Date | [2] Agent | [3] Customer | [4] Wilaya | [5] Tracking Status | [6] Product | [7] Total | [8] Delivery | [9] Driver
+      const orderId = String(cells[0]?.v || '');
       if (!orderId) return acc;
-      const rawStatus = String(cells[2]?.v || '');
-      const rawDate = String(cells[3]?.f || cells[3]?.v || '');
+      const rawStatus = String(cells[5]?.v || '');
+      const rawDate = String(cells[1]?.f || cells[1]?.v || '');
       const parsedDate = rawDate ? new Date(rawDate) : null;
       const date = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null;
+      console.log('[DZ-CHANGE] Tracking parsed sample:', {
+        orderId: String(cells[0]?.v || ''),
+        status: String(cells[5]?.v || ''),
+        date: String(cells[1]?.f || cells[1]?.v || ''),
+        total: Number(cells[7]?.v) || 0,
+        wilaya: String(cells[4]?.v || ''),
+      });
       acc.push({
         orderId,
         date,
-        agent: String(cells[5]?.v || ''),
-        customer: String(cells[6]?.v || ''),
+        agent: String(cells[2]?.v || ''),
+        customer: String(cells[3]?.v || ''),
         wilaya: String(cells[4]?.v || ''),
         trackingStatus: rawStatus,
         statusCategory: classifyTrackingStatus(rawStatus),
-        product: String(cells[7]?.v || ''),
-        total: Number(cells[8]?.v) || 0,
-        delivery: Number(cells[9]?.v) || 0,
-        driver: '',
+        product: String(cells[6]?.v || ''),
+        total: Number(cells[7]?.v) || 0,
+        delivery: Number(cells[8]?.v) || 0,
+        driver: String(cells[9]?.v || ''),
       });
       return acc;
     }, []);
