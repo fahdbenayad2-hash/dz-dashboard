@@ -8,7 +8,7 @@ import { classNames } from '@/lib/utils';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'لوحة التحكم' },
-  { to: '/monthly-report', icon: CalendarDays, label: 'تقرير الشهر الأخير' },
+  { to: '/monthly-report', icon: CalendarDays, label: 'تقارير الأشهر' },
   { to: '/products', icon: PackageSearch, label: 'المنتجات والتسعير' },
   { to: '/agents', icon: Users, label: 'الوكلاء' },
   { to: '/orders', icon: ClipboardList, label: 'الطلبات المعلقة' },

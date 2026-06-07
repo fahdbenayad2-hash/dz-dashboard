@@ -233,6 +233,54 @@ export function filterTrackingLastDays(tracking: TrackingOrder[], days: number) 
   return tracking.filter(t => isValidDate(t.date) && t.date >= cutoff);
 }
 
+export const ARABIC_MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'ماي', 'جوان', 'جويلية', 'أوت', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+
+export function formatMonthLabel(yearMonth: string): string {
+  const [year, month] = yearMonth.split('-');
+  return `${ARABIC_MONTHS[parseInt(month) - 1] || ''} ${year}`;
+}
+
+export function getMonthlyBreakdown(tracking: TrackingOrder[], yearMonth: string) {
+  const filtered = tracking.filter(t => {
+    if (!isValidDate(t.date)) return false;
+    const key = t.date.getFullYear() + '-' + String(t.date.getMonth() + 1).padStart(2, '0');
+    return key === yearMonth;
+  });
+  const daysInMonth = new Date(parseInt(yearMonth.split('-')[0]), parseInt(yearMonth.split('-')[1]), 0).getDate();
+  console.log('[DZ-CHANGE] monthly-breakdown', { yearMonth, total: filtered.length, daysInMonth });
+  return {
+    orders: filtered,
+    metrics: getTrackingMetrics(filtered),
+    statusDist: getTrackingStatusDistribution(filtered),
+    topProducts: getProductCountsTracking(filtered),
+    topWilayas: getWilayaCountsTracking(filtered),
+    dailyTrend: getDailyRevenueTracking(filtered, daysInMonth),
+  };
+}
+
+export function getAvailableMonths(tracking: TrackingOrder[]): string[] {
+  const set = new Set<string>();
+  tracking.forEach(t => {
+    if (!isValidDate(t.date)) return;
+    set.add(t.date.getFullYear() + '-' + String(t.date.getMonth() + 1).padStart(2, '0'));
+  });
+  return [...set].sort().reverse();
+}
+
+export function getLast3MonthsSummary(tracking: TrackingOrder[]) {
+  const now = new Date();
+  return [0, 1, 2].map(offset => {
+    const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    const filtered = tracking.filter(t => {
+      if (!isValidDate(t.date)) return false;
+      const k = t.date.getFullYear() + '-' + String(t.date.getMonth() + 1).padStart(2, '0');
+      return k === key;
+    });
+    return { month: key, ...getTrackingMetrics(filtered) };
+  });
+}
+
 export function getTodayOrders(orders: Order[]) {
   const today = getDateISOString(new Date());
   const todayOrders = orders.filter(o => {

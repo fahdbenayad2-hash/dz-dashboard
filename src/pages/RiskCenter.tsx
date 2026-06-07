@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { Order, PricingInputs } from '@/types';
+import type { TrackingOrder, PricingInputs } from '@/types';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -7,15 +7,16 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { RiskMeter } from '@/components/shared/RiskMeter';
 import { calculatePricing } from '@/lib/financialEngine';
 import { getRiskDetail, calculatePortfolioRisk } from '@/lib/riskScore';
-import { normalizeStatus } from '@/lib/dashboardMetrics';
-import { formatCurrency, formatPercent } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
 
-function makePricingInputs(product: string, orders: Order[]): PricingInputs {
-  const productOrders = orders.filter(o => o.product === product);
+function makePricingInputs(product: string, tracking: TrackingOrder[]): PricingInputs {
+  const productOrders = tracking.filter(t => t.product === product);
   const total = productOrders.length;
-  const failed = productOrders.filter(o => normalizeStatus(o.status) === 'Failed').length;
-  const cancelRate = total > 0 ? (failed / total) * 100 : 37;
-  const avgTotal = total > 0 ? productOrders.reduce((s, o) => s + o.total, 0) / total : 2000;
+  const delivered = productOrders.filter(t => t.statusCategory === 'delivered').length;
+  const returned = productOrders.filter(t => t.statusCategory === 'returned').length;
+  const settled = delivered + returned;
+  const cancelRate = settled > 0 ? (returned / settled) * 100 : 37;
+  const avgTotal = total > 0 ? productOrders.reduce((s, t) => s + t.total, 0) / total : 2000;
 
   return {
     fabricPricePerMeter: 450,
@@ -34,18 +35,18 @@ function makePricingInputs(product: string, orders: Order[]): PricingInputs {
   };
 }
 
-export function RiskCenter({ orders }: { orders: Order[] }) {
+export function RiskCenter({ trackingOrders }: { trackingOrders: TrackingOrder[] }) {
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
 
   const productRiskData = useMemo(() => {
-    const productNames = [...new Set(orders.map(o => o.product).filter(Boolean))];
+    const productNames = [...new Set(trackingOrders.map(t => t.product).filter(Boolean))];
 
     return productNames.map(name => {
-      const inputs = makePricingInputs(name, orders);
+      const inputs = makePricingInputs(name, trackingOrders);
       const result = calculatePricing(inputs);
       return { name, inputs, result };
     }).sort((a, b) => a.result.riskScore - b.result.riskScore);
-  }, [orders]);
+  }, [trackingOrders]);
 
   const portfolioHealth = useMemo(() => {
     if (productRiskData.length === 0) return null;
@@ -61,7 +62,6 @@ export function RiskCenter({ orders }: { orders: Order[] }) {
 
   return (
     <div className="space-y-6">
-      {/* Portfolio Health */}
       {portfolioHealth && (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           <Card className="lg:col-span-1">
@@ -107,7 +107,6 @@ export function RiskCenter({ orders }: { orders: Order[] }) {
         </div>
       )}
 
-      {/* Product Risk Matrix */}
       <Card>
         <CardHeader><CardTitle>مصفوفة مخاطر المنتجات</CardTitle></CardHeader>
         <CardContent>
@@ -118,7 +117,7 @@ export function RiskCenter({ orders }: { orders: Order[] }) {
                   <TableHead>المنتج</TableHead>
                   <TableHead>درجة المخاطرة</TableHead>
                   <TableHead>المستوى</TableHead>
-                  <TableHead>معدل الإلغاء</TableHead>
+                  <TableHead>معدل الإرجاع</TableHead>
                   <TableHead>هامش الربح</TableHead>
                   <TableHead>نسبة CPA</TableHead>
                   <TableHead>الإجراء</TableHead>
@@ -179,7 +178,6 @@ export function RiskCenter({ orders }: { orders: Order[] }) {
         </CardContent>
       </Card>
 
-      {/* Risk Detail Panel */}
       {selectedRisk && selectedProduct && (
         <Card>
           <CardHeader>
@@ -210,7 +208,6 @@ export function RiskCenter({ orders }: { orders: Order[] }) {
               </div>
             </div>
 
-            {/* Action Plan */}
             <div className="mt-6">
               <p className="font-semibold mb-3">خطة العمل</p>
               <div className="space-y-2">
@@ -225,7 +222,6 @@ export function RiskCenter({ orders }: { orders: Order[] }) {
               </div>
             </div>
 
-            {/* Most Urgent Fixes */}
             {portfolioHealth && portfolioHealth.urgentFixes.length > 0 && (
               <div className="mt-6">
                 <p className="font-semibold text-[var(--color-danger)] mb-3">الإصلاحات الأكثر إلحاحًا</p>
