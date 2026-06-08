@@ -12,6 +12,7 @@ import { Tracking } from '@/pages/Tracking';
 import { RiskCenter } from '@/pages/RiskCenter';
 import { MonthlyReport } from '@/pages/MonthlyReport';
 import { YearlyReport } from '@/pages/YearlyReport';
+import { ProductAnalysis } from '@/pages/ProductAnalysis';
 import { useSheetData } from '@/hooks/useSheetData';
 import { useTrackingData } from '@/hooks/useTrackingData';
 import { isAuthenticated, logout } from '@/lib/auth';
@@ -124,6 +125,7 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
               <Route path="/risk" element={<ProtectedRoute><RiskCenter trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/monthly-report" element={<ProtectedRoute><MonthlyReport trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/yearly-report" element={<ProtectedRoute><YearlyReport trackingOrders={trackingOrders} /></ProtectedRoute>} />
+              <Route path="/product-analysis" element={<ProtectedRoute><ProductAnalysis trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/login" element={<Navigate to="/" replace />} />
             </Routes>
           </main>

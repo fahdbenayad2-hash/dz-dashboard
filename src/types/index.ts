@@ -106,6 +106,60 @@ export interface AgentData {
 
 export type AgentBadge = 'top' | 'good' | 'average' | 'poor';
 
+// ── تحليل المنتج المتقدم ──
+
+export interface ProductExpenses {
+  adSpend: number;
+  otherExpenses: number;
+  expenseNotes: string;
+}
+
+export interface ProductPeriodFilter {
+  productName: string;
+  dateFrom: string;
+  dateTo: string;
+}
+
+export interface ProductPeriodData {
+  totalOrders: number;
+  delivered: number;
+  returned: number;
+  inProgress: number;
+  others: number;
+  settledCount: number;
+  cancellationRate: number;
+  deliveryRate: number;
+  grossRevenue: number;
+  deliveryCostPaid: number;
+  netRevenue: number;
+  returnShippingLoss: number;
+  returnedProductValue: number;
+  avgOrderValue: number;
+  avgDeliveryCost: number;
+  daysInPeriod: number;
+  avgDailyOrders: number;
+  dailyTrend: { date: string; orders: number; delivered: number; revenue: number }[];
+  topWilayas: { wilaya: string; orders: number; delivered: number; deliveryRate: number }[];
+}
+
+export interface ProductFinancialAnalysis {
+  period: ProductPeriodData;
+  expenses: ProductExpenses;
+  totalInvestment: number;
+  totalCost: number;
+  grossProfit: number;
+  netProfit: number;
+  netMargin: number;
+  roas: number;
+  cpa: number;
+  breakEvenOrders: number;
+  decision: 'scale' | 'optimize' | 'monitor' | 'stop';
+  decisionLabel: string;
+  decisionColor: string;
+  decisionReasons: string[];
+  actionPlan: string[];
+}
+
 export interface FilterState {
   search: string;
   statusFilter: OrderStatus[];

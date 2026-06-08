@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, PackageSearch, Users, ClipboardList, ShieldAlert,
-  CalendarDays, CalendarRange, Menu, LogOut, Package,
+  CalendarDays, CalendarRange, Menu, LogOut, Package, FlaskConical,
 } from 'lucide-react';
 import { classNames } from '@/lib/utils';
 
@@ -15,6 +15,7 @@ const navItems = [
   { to: '/tracking', icon: Package, label: 'التتبع' },
   { to: '/yearly-report', icon: CalendarRange, label: 'تقرير العام' },
   { to: '/risk', icon: ShieldAlert, label: 'مركز المخاطر' },
+  { to: '/product-analysis', icon: FlaskConical, label: 'تحليل المنتج' },
 ];
 
 interface SidebarProps {

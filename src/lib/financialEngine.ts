@@ -1,4 +1,5 @@
-import type { PricingInputs, PricingResult, CostBreakdown } from '@/types';
+import type { PricingInputs, PricingResult, CostBreakdown, TrackingOrder, ProductExpenses, ProductPeriodFilter, ProductPeriodData, ProductFinancialAnalysis } from '@/types';
+import { getDateISOString, isValidDate } from '@/lib/dashboardMetrics';
 
 export function calculateProductCost(inputs: PricingInputs): number {
   return inputs.fabricPricePerMeter * inputs.fabricMeters + inputs.sewingCost + inputs.accessoriesCost;
@@ -129,4 +130,184 @@ function calculateRiskScore(
   else if (shippingRatio > 0.15) score -= 5;
 
   return Math.max(0, score);
+}
+
+// ── تحليل المنتج المتقدم ──
+
+export function analyzeProductPeriod(
+  tracking: TrackingOrder[],
+  filter: ProductPeriodFilter,
+): ProductPeriodData {
+  const from = new Date(filter.dateFrom);
+  const to = new Date(filter.dateTo);
+  to.setHours(23, 59, 59, 999);
+
+  const periodOrders = tracking.filter(t => {
+    if (t.product !== filter.productName) return false;
+    if (!isValidDate(t.date)) return false;
+    return t.date >= from && t.date <= to;
+  });
+
+  const delivered = periodOrders.filter(t => t.statusCategory === 'delivered');
+  const returned  = periodOrders.filter(t => t.statusCategory === 'returned');
+  const inProg    = periodOrders.filter(t => t.statusCategory === 'transit' || t.statusCategory === 'delivery');
+  const others    = periodOrders.filter(t => t.statusCategory === 'others');
+
+  const settledCount     = delivered.length + returned.length;
+  const cancellationRate = settledCount > 0 ? (returned.length / settledCount) * 100 : 0;
+  const deliveryRate     = settledCount > 0 ? (delivered.length / settledCount) * 100 : 0;
+
+  const grossRevenue          = delivered.reduce((s, t) => s + t.total, 0);
+  const deliveryCostPaid      = delivered.reduce((s, t) => s + t.delivery, 0);
+  const netRevenue            = grossRevenue - deliveryCostPaid;
+  const returnShippingLoss    = returned.reduce((s, t) => s + t.delivery, 0);
+  const returnedProductValue  = returned.reduce((s, t) => s + t.total, 0);
+
+  const avgOrderValue   = delivered.length > 0 ? grossRevenue / delivered.length : 0;
+  const avgDeliveryCost = delivered.length > 0 ? deliveryCostPaid / delivered.length : 0;
+
+  const msPerDay = 86400000;
+  const daysInPeriod = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / msPerDay));
+  const dailyMap = new Map<string, { orders: number; delivered: number; revenue: number }>();
+  periodOrders.forEach(t => {
+    if (!isValidDate(t.date)) return;
+    const key = getDateISOString(t.date);
+    const e = dailyMap.get(key) || { orders: 0, delivered: 0, revenue: 0 };
+    e.orders++;
+    if (t.statusCategory === 'delivered') { e.delivered++; e.revenue += t.total; }
+    dailyMap.set(key, e);
+  });
+  const dailyTrend = [...dailyMap.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, d]) => ({ date, ...d }));
+
+  const wilayaMap = new Map<string, { orders: number; delivered: number }>();
+  periodOrders.forEach(t => {
+    if (!t.wilaya) return;
+    const e = wilayaMap.get(t.wilaya) || { orders: 0, delivered: 0 };
+    e.orders++;
+    if (t.statusCategory === 'delivered') e.delivered++;
+    wilayaMap.set(t.wilaya, e);
+  });
+  const topWilayas = [...wilayaMap.entries()]
+    .map(([wilaya, d]) => ({
+      wilaya, ...d,
+      deliveryRate: d.orders > 0 ? (d.delivered / d.orders) * 100 : 0,
+    }))
+    .sort((a, b) => b.orders - a.orders)
+    .slice(0, 10);
+
+  return {
+    totalOrders: periodOrders.length,
+    delivered: delivered.length,
+    returned: returned.length,
+    inProgress: inProg.length,
+    others: others.length,
+    settledCount, cancellationRate, deliveryRate,
+    grossRevenue, deliveryCostPaid, netRevenue,
+    returnShippingLoss, returnedProductValue,
+    avgOrderValue, avgDeliveryCost,
+    daysInPeriod, avgDailyOrders: periodOrders.length / daysInPeriod,
+    dailyTrend, topWilayas,
+  };
+}
+
+export function buildFinancialAnalysis(
+  period: ProductPeriodData,
+  expenses: ProductExpenses,
+): ProductFinancialAnalysis {
+  const totalAdAndOther = expenses.adSpend + expenses.otherExpenses;
+  const totalCost       = period.deliveryCostPaid + period.returnShippingLoss + totalAdAndOther;
+  const grossProfit     = period.grossRevenue - period.deliveryCostPaid - period.returnShippingLoss;
+  const netProfit       = period.grossRevenue - totalCost;
+  const netMargin       = period.grossRevenue > 0 ? (netProfit / period.grossRevenue) * 100 : 0;
+  const roas            = expenses.adSpend > 0 ? period.grossRevenue / expenses.adSpend : 0;
+  const cpa             = period.delivered > 0 && expenses.adSpend > 0
+    ? expenses.adSpend / period.delivered : 0;
+  const avgNetPerDelivered = period.avgOrderValue - period.avgDeliveryCost;
+  const breakEvenOrders = avgNetPerDelivered > 0
+    ? Math.ceil(totalCost / avgNetPerDelivered) : 0;
+
+  let decision: ProductFinancialAnalysis['decision'];
+  const reasons: string[] = [];
+  const actions: string[] = [];
+
+  if (netMargin >= 25 && period.deliveryRate >= 65 && (roas === 0 || roas >= 3)) {
+    decision = 'scale';
+  } else if (netMargin >= 10 && period.deliveryRate >= 50) {
+    decision = 'optimize';
+  } else if (netMargin >= 0 && period.settledCount >= 10) {
+    decision = 'monitor';
+  } else {
+    decision = 'stop';
+  }
+
+  if (period.deliveryRate < 50)
+    reasons.push(`معدل التوصيل ضعيف ${period.deliveryRate.toFixed(1)}%`);
+  if (period.deliveryRate >= 65)
+    reasons.push(`معدل توصيل جيد ${period.deliveryRate.toFixed(1)}%`);
+  if (netMargin < 0)
+    reasons.push(`المنتج يخسر — صافي الهامش ${netMargin.toFixed(1)}%`);
+  if (netMargin >= 25)
+    reasons.push(`هامش ربح صحي ${netMargin.toFixed(1)}%`);
+  if (roas > 0 && roas < 2)
+    reasons.push(`ROAS ضعيف ${roas.toFixed(2)}x`);
+  if (roas >= 3)
+    reasons.push(`ROAS ممتاز ${roas.toFixed(2)}x`);
+  if (period.cancellationRate > 40)
+    reasons.push(`معدل الإرجاع مرتفع ${period.cancellationRate.toFixed(1)}%`);
+  if (period.settledCount < 10)
+    reasons.push(`عينة صغيرة — ${period.settledCount} طلب محسوم`);
+  if (cpa > 0)
+    reasons.push(`CPA = ${cpa.toLocaleString('ar-DZ')} دج`);
+
+  if (decision === 'scale') {
+    actions.push('زد الميزانية الإعلانية بـ 20-30% تدريجياً مع مراقبة ROAS');
+    actions.push('وسّع لولايات جديدة — ابدأ بأقرب الولايات جغرافياً للأفضل أداءً');
+    actions.push('اختبر creatives إعلانية جديدة للحفاظ على ROAS');
+    actions.push('جهّز مخزوناً كافياً لاستيعاب الطلبات المتزايدة');
+  } else if (decision === 'optimize') {
+    if (period.cancellationRate > 30)
+      actions.push('راجع نص الإعلان والصورة — قد تستقطب جمهوراً غير مستهدف');
+    if (roas > 0 && roas < 3)
+      actions.push('اختبر تخفيض الميزانية وتركيزها على أفضل الإعلانات أداءً');
+    actions.push('ركّز الإعلانات على الولايات التي تُظهر أعلى معدل توصيل');
+    actions.push('اختبر سعراً أعلى بـ 5-10% — قد يرفع الهامش');
+    if (period.avgDeliveryCost > 450)
+      actions.push('فاوض شركة الشحن على سعر أفضل — التكلفة مرتفعة');
+  } else if (decision === 'monitor') {
+    actions.push('أكمل الفترة الحالية حتى تصل لـ 30+ طلب محسوم للحكم الدقيق');
+    actions.push('وثّق كل تغيير في الإعلانات مع تاريخه');
+    actions.push('قارن أداء الولايات وركّز على الأفضل');
+  } else {
+    actions.push('أوقف الإنفاق الإعلاني فوراً لوقف النزيف المالي');
+    actions.push('راجع جودة المنتج إذا كان معدل الإرجاع مرتفعاً');
+    actions.push('ادرس إعادة التسعير جذرياً أو تغيير قناة التسويق');
+    actions.push('قيّم تصفية المخزون الحالي بسعر التكلفة');
+  }
+
+  const decisionConfig = {
+    scale:    { label: 'قابل للتوسعة 🚀',    color: '#1D9E75' },
+    optimize: { label: 'يحتاج تحسين ⚙️',    color: '#EF9F27' },
+    monitor:  { label: 'راقب ولا تتسرع 👁',  color: '#378ADD' },
+    stop:     { label: 'أوقف الإنفاق 🛑',    color: '#E24B4A' },
+  };
+
+  return {
+    period,
+    expenses,
+    totalInvestment: totalCost,
+    totalCost,
+    grossProfit,
+    netProfit,
+    netMargin,
+    roas,
+    cpa,
+    breakEvenOrders,
+    decision,
+    decisionLabel: decisionConfig[decision].label,
+    decisionColor: decisionConfig[decision].color,
+    decisionReasons: reasons,
+    actionPlan: actions,
+  };
 }
