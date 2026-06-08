@@ -15,6 +15,7 @@ import { formatCurrency, formatNumber } from '@/lib/utils';
 import {
   getOrderMetrics, normalizeStatus,
   getTrackingMetrics, getTrackingStatusDistribution, getAgentCountsTracking, getWilayaCountsTracking, getProductCountsTracking, getMonthlyRevenueTracking, getDailyRevenueTracking, getTodayOrders,
+  getSettledMetrics,
 } from '@/lib/dashboardMetrics';
 
 function useDashboardData(orders: Order[], tracking: TrackingOrder[]) {
@@ -28,6 +29,7 @@ function useDashboardData(orders: Order[], tracking: TrackingOrder[]) {
     const productData = getProductCountsTracking(tracking);
     const monthlyData = getMonthlyRevenueTracking(tracking);
     const revenueTrend = getDailyRevenueTracking(tracking, 14);
+    const settledMetrics = getSettledMetrics(tracking);
 
     console.log('[DZ-CHANGE] tracking-metrics', trackingMetrics);
     console.log('[DZ-CHANGE] today-orders', today);
@@ -37,6 +39,7 @@ function useDashboardData(orders: Order[], tracking: TrackingOrder[]) {
       ...today,
       trackingStatus,
       agentData, wilayaData, productData,
+      settledMetrics,
       monthlyLabels: monthlyData.map(d => d[0]),
       monthlyOrders: monthlyData.map(d => d[1].orders),
       monthlyRevenue: monthlyData.map(d => d[1].revenue),
@@ -91,7 +94,7 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
         <KPICard icon={<AlarmClock className="h-5 w-5" />} label="طلبات اليوم (جديدة)" value={formatNumber(data.ordersToday)} color="#378ADD" />
         <KPICard icon={<DollarSign className="h-5 w-5" />} label="مداخيل اليوم" value={formatCurrency(data.revenueToday)} color="#1D9E75" />
         <KPICard icon={<Package className="h-5 w-5" />} label="قيد التوصيل" value={formatNumber(data.inTransit + data.inDelivery)} color="#EF9F27" />
-        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="معدل التوصيل" value={data.deliveryRate.toFixed(1) + '%'} color="#1D9E75" />
+        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="معدل التوصيل (محسوم)" value={data.settledMetrics.deliveryRate.toFixed(1) + '%'} subLabel={`من ${formatNumber(data.settledMetrics.settledCount)} طلب محسوم`} color="#1D9E75" />
         <KPICard icon={<XCircle className="h-5 w-5" />} label="معدل الإرجاع" value={data.returnRate.toFixed(1) + '%'} color="#E24B4A" />
         <KPICard icon={<Timer className="h-5 w-5" />} label="معلق (غير مؤكد)" value={formatNumber(data.pendingOrders)} color="#7F77DD" />
       </div>
