@@ -209,6 +209,75 @@ export interface CompetitiveAnalysis {
   recommendations: string[];
 }
 
+// ── AI Risk Engine ──
+
+export interface DailySnapshot {
+  date: string;
+  totalOrders: number;
+  delivered: number;
+  returned: number;
+  totalRevenue: number;
+}
+
+export interface OrderRiskAssessment {
+  score: number;
+  level: 'low' | 'medium' | 'high' | 'critical';
+  color: string;
+  factors: { label: string; impact: number; detail: string }[];
+  wilayaRisk: number;
+  amountRisk: number;
+}
+
+export interface CustomerRiskAssessment {
+  score: number;
+  level: 'low' | 'medium' | 'high' | 'critical';
+  totalOrders: number;
+  returnedOrders: number;
+  returnRate: number;
+}
+
+export interface DailyRiskPrediction {
+  predictedOrders: number;
+  predictedDelivered: number;
+  predictedReturned: number;
+  predictedRevenue: number;
+  confidence: 'low' | 'medium' | 'high';
+  confidenceScore: number;
+  basedOnDays: number;
+}
+
+// ── Storage Manager ──
+
+export interface StoredSnapshot {
+  id: string;
+  createdAt: string;
+  data: unknown;
+  sizeBytes: number;
+}
+
+export interface StorageStatus {
+  usedBytes: number;
+  usedPercentage: number;
+  snapshotCount: number;
+  oldestSnapshot: string | null;
+  newestSnapshot: string | null;
+}
+
+// ── Telegram Notifier ──
+
+export type NotificationType =
+  | 'daily_report'
+  | 'risk_alert'
+  | 'low_stock'
+  | 'order_anomaly';
+
+export interface NotificationPayload {
+  type: NotificationType;
+  title: string;
+  message: string;
+  data?: Record<string, unknown>;
+}
+
 export interface FilterState {
   search: string;
   statusFilter: OrderStatus[];

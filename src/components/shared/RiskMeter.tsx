@@ -3,17 +3,20 @@ import { classNames } from '@/lib/utils';
 interface RiskMeterProps {
   score: number;
   level: string;
-  color: string;
+  color?: string;
   size?: 'sm' | 'md' | 'lg';
 }
 
-export function RiskMeter({ score, level, color, size = 'md' }: RiskMeterProps) {
+export function RiskMeter({ score, level, color: explicitColor, size = 'md' }: RiskMeterProps) {
   const circumference = size === 'sm' ? 120 : size === 'lg' ? 220 : 160;
   const radius = circumference / (2 * Math.PI);
   const strokeWidth = size === 'sm' ? 6 : size === 'lg' ? 12 : 8;
   const viewBox = `0 0 ${(radius + strokeWidth) * 2} ${(radius + strokeWidth) * 2}`;
   const center = radius + strokeWidth;
   const dashOffset = circumference - (score / 100) * circumference;
+
+  const autoColor = score >= 80 ? '#E24B4A' : score >= 60 ? '#EF9F27' : score >= 40 ? '#378ADD' : '#1D9E75';
+  const color = explicitColor || autoColor;
 
   return (
     <div className={classNames('inline-flex flex-col items-center gap-2')}>
