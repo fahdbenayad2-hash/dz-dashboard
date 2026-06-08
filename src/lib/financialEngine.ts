@@ -1,4 +1,4 @@
-import type { PricingInputs, PricingResult, CostBreakdown, TrackingOrder, ProductExpenses, ProductPeriodFilter, ProductPeriodData, ProductFinancialAnalysis } from '@/types';
+import type { PricingInputs, PricingResult, CostBreakdown, TrackingOrder, ProductExpenses, ProductPeriodFilter, ProductPeriodData, ProductFinancialAnalysis, WilayaAnalysis, CompetitorData, CompetitiveAnalysis } from '@/types';
 import { getDateISOString, isValidDate } from '@/lib/dashboardMetrics';
 
 export function calculateProductCost(inputs: PricingInputs): number {
@@ -217,26 +217,46 @@ export function buildFinancialAnalysis(
   expenses: ProductExpenses,
 ): ProductFinancialAnalysis {
   const totalAdAndOther = expenses.adSpend + expenses.otherExpenses;
-  const totalCost       = period.deliveryCostPaid + period.returnShippingLoss + totalAdAndOther;
-  const grossProfit     = period.grossRevenue - period.deliveryCostPaid - period.returnShippingLoss;
-  const netProfit       = period.grossRevenue - totalCost;
-  const netMargin       = period.grossRevenue > 0 ? (netProfit / period.grossRevenue) * 100 : 0;
-  const roas            = expenses.adSpend > 0 ? period.grossRevenue / expenses.adSpend : 0;
-  const cpa             = period.delivered > 0 && expenses.adSpend > 0
-    ? expenses.adSpend / period.delivered : 0;
+
+  const variableCostPerOrder = expenses.unitCost + expenses.shippingFeePerOrder + expenses.packagingCostPerOrder;
+  const totalCOGS = period.delivered * expenses.unitCost;
+  const totalShippingPaid = period.delivered * expenses.shippingFeePerOrder;
+  const totalPackaging = period.totalOrders * expenses.packagingCostPerOrder;
+  const returnTotalCost = period.returned * (expenses.returnFeePerOrder + expenses.unitCost);
+
+  const totalCost = period.deliveryCostPaid + period.returnShippingLoss
+    + totalCOGS + totalShippingPaid + totalPackaging + returnTotalCost
+    + totalAdAndOther;
+
+  const trueNetProfit = period.netRevenue - totalCOGS - totalShippingPaid - totalPackaging
+    - returnTotalCost - expenses.adSpend - expenses.otherExpenses;
+  const trueNetMargin = period.grossRevenue > 0 ? (trueNetProfit / period.grossRevenue) * 100 : 0;
+  const profitPerUnit = period.avgOrderValue > 0
+    ? period.avgOrderValue - variableCostPerOrder - period.avgDeliveryCost : 0;
+  const breakEvenUnits = profitPerUnit > 0
+    ? Math.ceil(totalAdAndOther / profitPerUnit) : 0;
+
+  const roas = expenses.adSpend > 0 ? period.grossRevenue / expenses.adSpend : 0;
+  const cpa = period.delivered > 0 && expenses.adSpend > 0 ? expenses.adSpend / period.delivered : 0;
+
+  const totalInvestment = totalCOGS + expenses.adSpend + expenses.otherExpenses;
+  const roi = totalInvestment > 0 ? (trueNetProfit / totalInvestment) * 100 : 0;
+
+  const grossProfit = period.grossRevenue - period.deliveryCostPaid - period.returnShippingLoss;
+  const netProfit = period.grossRevenue - totalCost;
+  const netMargin = period.grossRevenue > 0 ? (netProfit / period.grossRevenue) * 100 : 0;
   const avgNetPerDelivered = period.avgOrderValue - period.avgDeliveryCost;
-  const breakEvenOrders = avgNetPerDelivered > 0
-    ? Math.ceil(totalCost / avgNetPerDelivered) : 0;
+  const breakEvenOrders = avgNetPerDelivered > 0 ? Math.ceil(totalCost / avgNetPerDelivered) : 0;
 
   let decision: ProductFinancialAnalysis['decision'];
   const reasons: string[] = [];
   const actions: string[] = [];
 
-  if (netMargin >= 25 && period.deliveryRate >= 65 && (roas === 0 || roas >= 3)) {
+  if (trueNetMargin >= 20 && period.deliveryRate >= 65 && profitPerUnit > 0) {
     decision = 'scale';
-  } else if (netMargin >= 10 && period.deliveryRate >= 50) {
+  } else if (trueNetMargin >= 8 && period.deliveryRate >= 50) {
     decision = 'optimize';
-  } else if (netMargin >= 0 && period.settledCount >= 10) {
+  } else if (trueNetMargin >= 0 && period.settledCount >= 10) {
     decision = 'monitor';
   } else {
     decision = 'stop';
@@ -246,10 +266,12 @@ export function buildFinancialAnalysis(
     reasons.push(`معدل التوصيل ضعيف ${period.deliveryRate.toFixed(1)}%`);
   if (period.deliveryRate >= 65)
     reasons.push(`معدل توصيل جيد ${period.deliveryRate.toFixed(1)}%`);
-  if (netMargin < 0)
-    reasons.push(`المنتج يخسر — صافي الهامش ${netMargin.toFixed(1)}%`);
-  if (netMargin >= 25)
-    reasons.push(`هامش ربح صحي ${netMargin.toFixed(1)}%`);
+  if (trueNetMargin < 0)
+    reasons.push(`المنتج يخسر — صافي الهامش ${trueNetMargin.toFixed(1)}%`);
+  if (trueNetMargin >= 20)
+    reasons.push(`هامش ربح صحي ${trueNetMargin.toFixed(1)}%`);
+  if (profitPerUnit <= 0)
+    reasons.push(`ربح القطعة سالب — تكلفة المتغيرات أعلى من سعر البيع`);
   if (roas > 0 && roas < 2)
     reasons.push(`ROAS ضعيف ${roas.toFixed(2)}x`);
   if (roas >= 3)
@@ -296,7 +318,7 @@ export function buildFinancialAnalysis(
   return {
     period,
     expenses,
-    totalInvestment: totalCost,
+    totalInvestment,
     totalCost,
     grossProfit,
     netProfit,
@@ -304,10 +326,124 @@ export function buildFinancialAnalysis(
     roas,
     cpa,
     breakEvenOrders,
+    totalCOGS,
+    totalShippingPaid,
+    totalPackaging,
+    returnTotalCost,
+    variableCostPerOrder,
+    profitPerUnit,
+    trueNetProfit,
+    trueNetMargin,
+    breakEvenUnits,
+    roi,
     decision,
     decisionLabel: decisionConfig[decision].label,
     decisionColor: decisionConfig[decision].color,
     decisionReasons: reasons,
     actionPlan: actions,
   };
+}
+
+export function buildWilayaAnalysis(
+  tracking: TrackingOrder[],
+  filter: ProductPeriodFilter,
+  expenses: ProductExpenses,
+): WilayaAnalysis[] {
+  const from = new Date(filter.dateFrom);
+  const to = new Date(filter.dateTo);
+  to.setHours(23, 59, 59, 999);
+
+  const periodOrders = tracking.filter(t => {
+    if (t.product !== filter.productName) return false;
+    if (!isValidDate(t.date)) return false;
+    return t.date >= from && t.date <= to;
+  });
+
+  const wilayaMap = new Map<string, { orders: number; delivered: number; returned: number; revenue: number; netRevenue: number }>();
+  periodOrders.forEach(t => {
+    if (!t.wilaya) return;
+    const e = wilayaMap.get(t.wilaya) || { orders: 0, delivered: 0, returned: 0, revenue: 0, netRevenue: 0 };
+    e.orders++;
+    if (t.statusCategory === 'delivered') { e.delivered++; e.revenue += t.total; e.netRevenue += t.total - t.delivery; }
+    if (t.statusCategory === 'returned') e.returned++;
+    wilayaMap.set(t.wilaya, e);
+  });
+
+  const variableCostPerOrder = expenses.unitCost + expenses.shippingFeePerOrder + expenses.packagingCostPerOrder;
+  const totalProfitContribution = [...wilayaMap.values()].reduce((s, d) => {
+    const returnCost = d.returned * (expenses.returnFeePerOrder + expenses.unitCost);
+    const contribution = d.netRevenue - (d.delivered * variableCostPerOrder) - returnCost;
+    return s + Math.max(0, contribution);
+  }, 0) || 1;
+  const totalOrders = [...wilayaMap.values()].reduce((s, d) => s + d.orders, 0) || 1;
+
+  return [...wilayaMap.entries()]
+    .map(([wilaya, d]) => {
+      const inProgress = d.orders - d.delivered - d.returned;
+      const deliveryRate = d.orders > 0 ? (d.delivered / d.orders) * 100 : 0;
+      const avgOrderValue = d.delivered > 0 ? d.revenue / d.delivered : 0;
+      const returnCost = d.returned * (expenses.returnFeePerOrder + expenses.unitCost);
+      const profitContribution = d.netRevenue - (d.delivered * variableCostPerOrder) - returnCost;
+      const profitShare = Math.max(0, profitContribution) / totalProfitContribution;
+      const ordersShare = d.orders / totalOrders;
+      const score = Math.min(100, (deliveryRate * 0.40 + profitShare * 0.35 + ordersShare * 0.25) * 100);
+      const tier: WilayaAnalysis['tier'] = score >= 70 ? 'A' : score >= 45 ? 'B' : score >= 25 ? 'C' : 'D';
+      return { wilaya, orders: d.orders, delivered: d.delivered, returned: d.returned, inProgress, deliveryRate, revenue: d.revenue, netRevenue: d.netRevenue, profitContribution, avgOrderValue, returnCost, score, tier };
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+export function buildCompetitiveAnalysis(
+  financial: ProductFinancialAnalysis,
+  competitor: CompetitorData,
+): CompetitiveAnalysis {
+  const priceGap = competitor.competitorPrice > 0
+    ? ((financial.period.avgOrderValue - competitor.competitorPrice) / competitor.competitorPrice) * 100 : 0;
+  const deliveryAdvantage = financial.period.deliveryRate - competitor.marketAvgDeliveryRate;
+  const cpaEfficiency = competitor.marketAvgCPA > 0
+    ? ((competitor.marketAvgCPA - financial.cpa) / competitor.marketAvgCPA) * 100 : 0;
+
+  const competitiveScore = (deliveryAdvantage >= 0 ? 33 : 0)
+    + (cpaEfficiency > 0 ? 33 : 0)
+    + (financial.trueNetMargin >= 15 ? 34 : financial.trueNetMargin >= 8 ? 17 : 0);
+
+  let position: CompetitiveAnalysis['position'];
+  let positionLabel: string;
+  let positionColor: string;
+
+  if (competitiveScore >= 80) {
+    position = 'leader'; positionLabel = 'رائد السوق 🏆'; positionColor = 'var(--color-success)';
+  } else if (competitiveScore >= 50) {
+    position = 'strong'; positionLabel = 'منافس قوي 🔵'; positionColor = 'var(--color-primary)';
+  } else if (competitiveScore >= 30) {
+    position = 'average'; positionLabel = 'في المنتصف ⚪'; positionColor = 'var(--color-warning)';
+  } else {
+    position = 'danger'; positionLabel = 'في خطر تنافسي 🔴'; positionColor = 'var(--color-danger)';
+  }
+
+  const advantages: string[] = [];
+  const weaknesses: string[] = [];
+  const recommendations: string[] = [];
+
+  if (deliveryAdvantage > 0) advantages.push(`معدل توصيل أعلى من السوق (+${deliveryAdvantage.toFixed(1)}%)`);
+  else if (deliveryAdvantage < -5) weaknesses.push(`معدل توصيل أسوأ من السوق (${deliveryAdvantage.toFixed(1)}%)`);
+
+  if (cpaEfficiency > 0) advantages.push(`CPA أفضل من السوق بـ ${Math.abs(cpaEfficiency).toFixed(0)}%`);
+  else if (cpaEfficiency < -20) weaknesses.push(`إعلانات أغلى من السوق بـ ${Math.abs(cpaEfficiency).toFixed(0)}%`);
+
+  if (priceGap > 10) weaknesses.push(`سعرك أعلى من المنافس بـ ${priceGap.toFixed(0)}%`);
+  else if (priceGap < -5) advantages.push(`سعرك أقل من المنافس (أكثر تنافسية)`);
+
+  if (competitiveScore >= 66 && financial.trueNetMargin >= 15)
+    recommendations.push('وضعك قوي — وقت التوسع والسكالينغ');
+  if (priceGap > 10)
+    recommendations.push('سعرك مرتفع — جرب تخفيض 50-100 دج أو زد القيمة المقدمة');
+  if (deliveryAdvantage < -5)
+    recommendations.push('معدل توصيلك أسوأ من السوق — راجع شركة التوصيل');
+  if (cpaEfficiency < -20)
+    recommendations.push('إعلاناتك مكلفة — راجع الاستهداف والجمهور');
+  if (recommendations.length === 0)
+    recommendations.push('أداء متوازن — حافظ على الاستراتيجية الحالية وراقب السوق');
+
+  return { priceGap, deliveryAdvantage, cpaEfficiency, competitiveScore, position, positionLabel, positionColor, advantages, weaknesses, recommendations };
 }

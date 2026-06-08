@@ -112,6 +112,10 @@ export interface ProductExpenses {
   adSpend: number;
   otherExpenses: number;
   expenseNotes: string;
+  unitCost: number;
+  shippingFeePerOrder: number;
+  returnFeePerOrder: number;
+  packagingCostPerOrder: number;
 }
 
 export interface ProductPeriodFilter {
@@ -153,11 +157,56 @@ export interface ProductFinancialAnalysis {
   roas: number;
   cpa: number;
   breakEvenOrders: number;
+  totalCOGS: number;
+  totalShippingPaid: number;
+  totalPackaging: number;
+  returnTotalCost: number;
+  variableCostPerOrder: number;
+  profitPerUnit: number;
+  trueNetProfit: number;
+  trueNetMargin: number;
+  breakEvenUnits: number;
+  roi: number;
   decision: 'scale' | 'optimize' | 'monitor' | 'stop';
   decisionLabel: string;
   decisionColor: string;
   decisionReasons: string[];
   actionPlan: string[];
+}
+
+export interface WilayaAnalysis {
+  wilaya: string;
+  orders: number;
+  delivered: number;
+  returned: number;
+  inProgress: number;
+  deliveryRate: number;
+  revenue: number;
+  netRevenue: number;
+  profitContribution: number;
+  avgOrderValue: number;
+  returnCost: number;
+  score: number;
+  tier: 'A' | 'B' | 'C' | 'D';
+}
+
+export interface CompetitorData {
+  competitorPrice: number;
+  marketAvgDeliveryRate: number;
+  marketAvgCPA: number;
+}
+
+export interface CompetitiveAnalysis {
+  priceGap: number;
+  deliveryAdvantage: number;
+  cpaEfficiency: number;
+  competitiveScore: number;
+  position: 'leader' | 'strong' | 'average' | 'danger';
+  positionLabel: string;
+  positionColor: string;
+  advantages: string[];
+  weaknesses: string[];
+  recommendations: string[];
 }
 
 export interface FilterState {

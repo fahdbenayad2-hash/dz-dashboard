@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import type { TrackingOrder, ProductExpenses, ProductPeriodFilter } from '@/types';
+import type { TrackingOrder, ProductExpenses, ProductPeriodFilter, WilayaAnalysis, CompetitorData, CompetitiveAnalysis } from '@/types';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -9,8 +9,8 @@ import { KPICard } from '@/components/shared/KPICard';
 import { LineChart } from '@/components/charts/LineChart';
 import { BarChart } from '@/components/charts/BarChart';
 import { formatCurrency, formatNumber } from '@/lib/utils';
-import { analyzeProductPeriod, buildFinancialAnalysis } from '@/lib/financialEngine';
-import { TrendingUp, TrendingDown, AlertTriangle, Minus } from 'lucide-react';
+import { analyzeProductPeriod, buildFinancialAnalysis, buildWilayaAnalysis, buildCompetitiveAnalysis } from '@/lib/financialEngine';
+import { TrendingUp, TrendingDown, AlertTriangle, Minus, DollarSign, BarChart3, Target, Shield, ChevronUp, ChevronDown } from 'lucide-react';
 
 function defaultDates() {
   const to   = new Date();
@@ -21,6 +21,9 @@ function defaultDates() {
     to:   to.toISOString().slice(0, 10),
   };
 }
+
+type SortKey = 'wilaya' | 'orders' | 'delivered' | 'deliveryRate' | 'revenue' | 'avgOrderValue' | 'score' | 'tier';
+type SortDir = 'asc' | 'desc';
 
 export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOrder[] }) {
   const productList = useMemo(() => {
@@ -35,15 +38,58 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
   const [dateTo,   setDateTo]     = useState(defaults.to);
   const [expenses, setExpenses]   = useState<ProductExpenses>({
     adSpend: 0, otherExpenses: 0, expenseNotes: '',
+    unitCost: 0, shippingFeePerOrder: 0, returnFeePerOrder: 0, packagingCostPerOrder: 0,
   });
   const [submitted, setSubmitted] = useState(false);
+  const [showCompetitor, setShowCompetitor] = useState(false);
+  const [competitorData, setCompetitorData] = useState<CompetitorData>({
+    competitorPrice: 0, marketAvgDeliveryRate: 70, marketAvgCPA: 500,
+  });
+  const [wilayaSort, setWilayaSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'score', dir: 'desc' });
+
+  const filter: ProductPeriodFilter | null = useMemo(() => {
+    if (!selectedProduct) return null;
+    return { productName: selectedProduct, dateFrom, dateTo };
+  }, [selectedProduct, dateFrom, dateTo]);
+
+  const period = useMemo(() => {
+    if (!filter) return null;
+    return analyzeProductPeriod(trackingOrders, filter);
+  }, [trackingOrders, filter]);
 
   const analysis = useMemo(() => {
-    if (!submitted || !selectedProduct) return null;
-    const filter: ProductPeriodFilter = { productName: selectedProduct, dateFrom, dateTo };
-    const period = analyzeProductPeriod(trackingOrders, filter);
+    if (!period || !submitted) return null;
     return buildFinancialAnalysis(period, expenses);
-  }, [submitted, selectedProduct, dateFrom, dateTo, expenses, trackingOrders]);
+  }, [period, expenses, submitted]);
+
+  const wilayaAnalysis = useMemo(() => {
+    if (!filter || !submitted) return [];
+    return buildWilayaAnalysis(trackingOrders, filter, expenses);
+  }, [trackingOrders, filter, expenses, submitted]);
+
+  const competitive = useMemo(() => {
+    if (!analysis || !showCompetitor) return null;
+    return buildCompetitiveAnalysis(analysis, competitorData);
+  }, [analysis, competitorData, showCompetitor]);
+
+  const sortedWilayas = useMemo(() => {
+    const sorted = [...wilayaAnalysis];
+    sorted.sort((a, b) => {
+      let cmp = 0;
+      switch (wilayaSort.key) {
+        case 'wilaya': cmp = a.wilaya.localeCompare(b.wilaya); break;
+        case 'orders': cmp = a.orders - b.orders; break;
+        case 'delivered': cmp = a.delivered - b.delivered; break;
+        case 'deliveryRate': cmp = a.deliveryRate - b.deliveryRate; break;
+        case 'revenue': cmp = a.revenue - b.revenue; break;
+        case 'avgOrderValue': cmp = a.avgOrderValue - b.avgOrderValue; break;
+        case 'score': cmp = a.score - b.score; break;
+        case 'tier': cmp = a.tier.localeCompare(b.tier); break;
+      }
+      return wilayaSort.dir === 'desc' ? -cmp : cmp;
+    });
+    return sorted;
+  }, [wilayaAnalysis, wilayaSort]);
 
   const handleSubmit = () => {
     if (!selectedProduct || !dateFrom || !dateTo) return;
@@ -53,6 +99,28 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
 
   const handleExpenseChange = (key: keyof ProductExpenses, value: string | number) => {
     setExpenses(prev => ({ ...prev, [key]: value }));
+    if (key !== 'expenseNotes') setSubmitted(false);
+  };
+
+  const toggleWilayaSort = (key: SortKey) => {
+    setWilayaSort(prev => prev.key === key ? { key, dir: prev.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' });
+  };
+
+  const tierColor = (tier: string) => {
+    switch (tier) {
+      case 'A': return 'var(--color-success)';
+      case 'B': return 'var(--color-primary)';
+      case 'C': return 'var(--color-warning)';
+      case 'D': return 'var(--color-danger)';
+      default: return 'var(--color-text-muted)';
+    }
+  };
+
+  const scoreBg = (score: number) => {
+    if (score >= 70) return 'bg-green-100 dark:bg-green-900/30';
+    if (score >= 45) return 'bg-blue-100 dark:bg-blue-900/30';
+    if (score >= 25) return 'bg-yellow-100 dark:bg-yellow-900/30';
+    return 'bg-red-100 dark:bg-red-900/30';
   };
 
   return (
@@ -90,49 +158,58 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
 
           <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
             <p className="text-sm font-semibold mb-3">المصاريف الفعلية خلال الفترة</p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4">
               <div>
-                <label className="block text-xs text-[var(--color-text-muted)] mb-1">
-                  الإنفاق الإعلاني (دج) — فيسبوك / إنستغرام / ...
-                </label>
-                <Input
-                  type="number"
-                  min={0}
-                  placeholder="0"
+                <label className="block text-xs text-[var(--color-text-muted)] mb-1">الإنفاق الإعلاني (دج)</label>
+                <Input type="number" min={0} placeholder="0"
                   value={expenses.adSpend || ''}
-                  onChange={e => handleExpenseChange('adSpend', Number(e.target.value))}
-                />
+                  onChange={e => handleExpenseChange('adSpend', Number(e.target.value))} />
               </div>
               <div>
-                <label className="block text-xs text-[var(--color-text-muted)] mb-1">
-                  مصاريف أخرى (دج) — تصوير، تصميم، عينات، ...
-                </label>
-                <Input
-                  type="number"
-                  min={0}
-                  placeholder="0"
+                <label className="block text-xs text-[var(--color-text-muted)] mb-1">مصاريف أخرى (دج)</label>
+                <Input type="number" min={0} placeholder="0"
                   value={expenses.otherExpenses || ''}
-                  onChange={e => handleExpenseChange('otherExpenses', Number(e.target.value))}
-                />
+                  onChange={e => handleExpenseChange('otherExpenses', Number(e.target.value))} />
               </div>
               <div>
+                <label className="block text-xs text-[var(--color-text-muted)] mb-1">تكلفة الوحدة (دج)</label>
+                <Input type="number" min={0} placeholder="0"
+                  value={expenses.unitCost || ''}
+                  onChange={e => handleExpenseChange('unitCost', Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="block text-xs text-[var(--color-text-muted)] mb-1">رسوم شحن/طلب (دج)</label>
+                <Input type="number" min={0} placeholder="0"
+                  value={expenses.shippingFeePerOrder || ''}
+                  onChange={e => handleExpenseChange('shippingFeePerOrder', Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="block text-xs text-[var(--color-text-muted)] mb-1">رسوم إرجاع (دج)</label>
+                <Input type="number" min={0} placeholder="0"
+                  value={expenses.returnFeePerOrder || ''}
+                  onChange={e => handleExpenseChange('returnFeePerOrder', Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="block text-xs text-[var(--color-text-muted)] mb-1">تغليف/طلب (دج)</label>
+                <Input type="number" min={0} placeholder="0"
+                  value={expenses.packagingCostPerOrder || ''}
+                  onChange={e => handleExpenseChange('packagingCostPerOrder', Number(e.target.value))} />
+              </div>
+              <div className="md:col-span-3 xl:col-span-6">
                 <label className="block text-xs text-[var(--color-text-muted)] mb-1">ملاحظات</label>
-                <Input
-                  placeholder="مثال: حملة عيد الفطر..."
+                <Input placeholder="مثال: حملة عيد الفطر..."
                   value={expenses.expenseNotes}
-                  onChange={e => handleExpenseChange('expenseNotes', e.target.value)}
-                />
+                  onChange={e => handleExpenseChange('expenseNotes', e.target.value)} />
               </div>
             </div>
           </div>
 
-          <div className="mt-4">
-            <Button
-              onClick={handleSubmit}
-              disabled={!selectedProduct || !dateFrom || !dateTo}
-              className="w-full md:w-auto"
-            >
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Button onClick={handleSubmit} disabled={!selectedProduct || !dateFrom || !dateTo} className="w-full md:w-auto">
               تحليل المنتج
+            </Button>
+            <Button variant="outline" onClick={() => setShowCompetitor(p => !p)} className="w-full md:w-auto">
+              {showCompetitor ? 'إخفاء' : 'إظهار'} التحليل التنافسي
             </Button>
           </div>
         </CardContent>
@@ -140,6 +217,7 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
 
       {analysis && (
         <>
+          {/* Decision Banner */}
           <Card style={{ borderColor: analysis.decisionColor, borderWidth: 2 }}>
             <CardContent className="pt-6">
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -179,7 +257,7 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
               value={formatNumber(analysis.period.delivered)}
               change={analysis.period.deliveryRate - 100}
               changeLabel={`معدل ${analysis.period.deliveryRate.toFixed(1)}% (محسوم)`}
-              color="#1D9E75"
+              color="var(--color-success)"
             />
             <KPICard
               icon={<TrendingDown className="h-5 w-5" />}
@@ -187,7 +265,7 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
               value={formatNumber(analysis.period.returned)}
               change={-analysis.period.cancellationRate}
               changeLabel={`${analysis.period.cancellationRate.toFixed(1)}% من المحسوم`}
-              color="#E24B4A"
+              color="var(--color-danger)"
             />
             <KPICard
               icon={<Minus className="h-5 w-5" />}
@@ -195,73 +273,93 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
               value={formatNumber(analysis.period.inProgress)}
               change={0}
               changeLabel="لم يُحسم بعد"
-              color="#EF9F27"
+              color="var(--color-warning)"
             />
           </div>
 
-          {/* KPI Cards — صف 2: الماليات */}
+          {/* KPI Cards — صف 2: الماليات الموسعة */}
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
             <KPICard
-              icon={<TrendingUp className="h-5 w-5" />}
-              label="إيراد حقيقي (مسلّم)"
-              value={formatCurrency(analysis.period.grossRevenue)}
-              color="#1D9E75"
+              icon={<DollarSign className="h-5 w-5" />}
+              label="صافي الربح الحقيقي"
+              value={formatCurrency(analysis.trueNetProfit)}
+              change={analysis.trueNetMargin}
+              changeLabel="الهامش الحقيقي"
+              color={analysis.trueNetProfit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}
             />
             <KPICard
-              icon={<TrendingUp className="h-5 w-5" />}
-              label="صافي الربح"
-              value={formatCurrency(analysis.netProfit)}
-              change={analysis.netMargin}
-              changeLabel="هامش الربح"
-              color={analysis.netProfit >= 0 ? '#1D9E75' : '#E24B4A'}
-            />
-            <KPICard
-              icon={<TrendingUp className="h-5 w-5" />}
-              label="ROAS"
-              value={analysis.roas > 0 ? analysis.roas.toFixed(2) + 'x' : 'لا يوجد إعلان'}
+              icon={<BarChart3 className="h-5 w-5" />}
+              label="ربح القطعة"
+              value={formatCurrency(analysis.profitPerUnit)}
               change={0}
-              changeLabel={analysis.expenses.adSpend > 0 ? `إنفاق ${formatCurrency(analysis.expenses.adSpend)}` : ''}
-              color={analysis.roas >= 3 ? '#1D9E75' : analysis.roas >= 2 ? '#EF9F27' : '#E24B4A'}
+              changeLabel={`بعد خصم ${formatCurrency(analysis.variableCostPerOrder)} متغيرات/قطعة`}
+              color={analysis.profitPerUnit > 0 ? 'var(--color-success)' : 'var(--color-danger)'}
             />
             <KPICard
-              icon={<AlertTriangle className="h-5 w-5" />}
-              label="نقطة التعادل"
-              value={`${formatNumber(analysis.breakEvenOrders)} طلب`}
+              icon={<Target className="h-5 w-5" />}
+              label="ROI"
+              value={analysis.roi.toFixed(1) + '%'}
               change={0}
-              changeLabel={`لتغطية ${formatCurrency(analysis.totalCost)} تكاليف`}
-              color="#378ADD"
+              changeLabel={`على استثمار ${formatCurrency(analysis.totalInvestment)}`}
+              color={analysis.roi > 0 ? 'var(--color-success)' : 'var(--color-danger)'}
+            />
+            <KPICard
+              icon={<Shield className="h-5 w-5" />}
+              label="نقطة التعادل (وحدات)"
+              value={formatNumber(analysis.breakEvenUnits)}
+              change={0}
+              changeLabel={`لتغطية التكاليف الثابتة ${formatCurrency(analysis.expenses.adSpend + analysis.expenses.otherExpenses)}`}
+              color="var(--color-primary)"
             />
           </div>
 
-          {/* تفصيل التكاليف + خطة العمل */}
+          {/* Full P&L Statement */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
-              <CardHeader><CardTitle>تفصيل التكاليف والإيراد</CardTitle></CardHeader>
+              <CardHeader><CardTitle>قائمة الدخل الكاملة (P&L)</CardTitle></CardHeader>
               <CardContent>
                 <div className="space-y-2 text-sm">
                   {[
-                    { label: 'الإيراد الإجمالي (delivered)',      value: analysis.period.grossRevenue,        type: 'income' as const },
-                    { label: '← تكلفة شحن المسلّمين',            value: -analysis.period.deliveryCostPaid,   type: 'cost' as const },
-                    { label: '← خسارة شحن المرتجعين',            value: -analysis.period.returnShippingLoss, type: 'cost' as const },
-                    { label: '← الإنفاق الإعلاني',               value: -analysis.expenses.adSpend,          type: 'cost' as const },
-                    { label: '← مصاريف أخرى',                    value: -analysis.expenses.otherExpenses,    type: 'cost' as const },
-                    { label: '= صافي الربح',                      value: analysis.netProfit,                  type: 'result' as const },
+                    { label: 'الإيراد الإجمالي (مسلّم)', value: analysis.period.grossRevenue, type: 'income' as const },
+                    { label: '← الإيراد الصافي (بعد الشحن)', value: analysis.period.netRevenue, type: 'income' as const },
+                    { label: '', value: 0, type: 'separator' as const },
+                    { label: 'تكلفة البضاعة المباعة (COGS)', value: -analysis.totalCOGS, type: 'cost' as const },
+                    { label: 'رسوم الشحن (للطلبات المسلّمة)', value: -analysis.totalShippingPaid, type: 'cost' as const },
+                    { label: 'رسوم التغليف', value: -analysis.totalPackaging, type: 'cost' as const },
+                    { label: 'تكلفة المرتجعات (وحدة + رسوم)', value: -analysis.returnTotalCost, type: 'cost' as const },
+                    { label: 'تكلفة شحن المسلّمين', value: -analysis.period.deliveryCostPaid, type: 'cost' as const },
+                    { label: 'خسارة شحن المرتجعين', value: -analysis.period.returnShippingLoss, type: 'cost' as const },
+                    { label: 'الإنفاق الإعلاني', value: -analysis.expenses.adSpend, type: 'cost' as const },
+                    { label: 'مصاريف أخرى', value: -analysis.expenses.otherExpenses, type: 'cost' as const },
+                    { label: '', value: 0, type: 'separator' as const },
+                    { label: '= صافي الربح الحقيقي', value: analysis.trueNetProfit, type: 'result' as const },
+                    { label: 'الهامش الحقيقي', value: analysis.trueNetMargin, type: 'resultPercent' as const },
                   ].map((row, i) => (
-                    <div key={i} className={`flex items-center justify-between py-1.5 ${row.type === 'result' ? 'border-t border-[var(--color-border)] pt-2 font-bold' : ''}`}>
-                      <span className={row.type === 'cost' ? 'text-[var(--color-text-muted)]' : ''}>{row.label}</span>
-                      <span className={`tabular-nums font-medium ${
-                        row.type === 'income' ? 'text-[var(--color-success)]' :
-                        row.type === 'cost'   ? 'text-[var(--color-danger)]'  :
-                        row.value >= 0        ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'
-                      }`}>
-                        {row.value >= 0 ? '+' : ''}{formatCurrency(Math.abs(row.value))}
-                      </span>
-                    </div>
+                    row.type === 'separator'
+                      ? <div key={i} className="border-t border-[var(--color-border)]" />
+                      : (
+                        <div key={i} className={`flex items-center justify-between py-1 ${row.type === 'result' || row.type === 'resultPercent' ? 'border-t border-[var(--color-border)] pt-2 font-bold' : ''}`}>
+                          <span className={row.type === 'cost' ? 'text-[var(--color-text-muted)]' : ''}>{row.label}</span>
+                          <span className={`tabular-nums font-medium ${
+                            row.type === 'income' ? 'text-[var(--color-success)]' :
+                            row.type === 'cost' ? 'text-[var(--color-danger)]' :
+                            row.type === 'resultPercent' ? (
+                              row.value >= 20 ? 'text-[var(--color-success)]' :
+                              row.value >= 8 ? 'text-[var(--color-warning)]' :
+                              'text-[var(--color-danger)]'
+                            ) :
+                            row.value >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'
+                          }`}>
+                            {row.type === 'resultPercent' ? `${row.value.toFixed(1)}%` : `${row.value >= 0 ? '+' : ''}${formatCurrency(Math.abs(row.value))}`}
+                          </span>
+                        </div>
+                      )
                   ))}
                   <div className="mt-3 pt-3 border-t border-[var(--color-border)] text-xs text-[var(--color-text-muted)]">
-                    متوسط قيمة الطلب المسلّم: <span className="font-medium text-[var(--color-text)]">{formatCurrency(analysis.period.avgOrderValue)}</span>
-                    {' — '}متوسط تكلفة الشحن: <span className="font-medium text-[var(--color-text)]">{formatCurrency(analysis.period.avgDeliveryCost)}</span>
+                    متوسط قيمة الطلب: <span className="font-medium text-[var(--color-text)]">{formatCurrency(analysis.period.avgOrderValue)}</span>
+                    {' — '}متوسط الشحن: <span className="font-medium text-[var(--color-text)]">{formatCurrency(analysis.period.avgDeliveryCost)}</span>
                     {analysis.cpa > 0 && <> — CPA: <span className="font-medium text-[var(--color-text)]">{formatCurrency(analysis.cpa)}</span></>}
+                    {' — '}ROAS: <span className="font-medium text-[var(--color-text)]">{analysis.roas.toFixed(2)}x</span>
                   </div>
                 </div>
               </CardContent>
@@ -311,16 +409,101 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
             </Card>
           )}
 
-          {/* أفضل الولايات */}
-          {analysis.period.topWilayas.length > 0 && (
+          {/* Wilaya Deep Analysis */}
+          <Card>
+            <CardHeader>
+              <CardTitle>تحليل عميق للولايات — {selectedProduct}</CardTitle>
+              <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                {wilayaAnalysis.length} ولاية | التصنيف: A (أفضل) → D (أسوأ) | الترتيب الافتراضي حسب النتيجة
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      {[
+                        { key: 'wilaya' as SortKey, label: 'الولاية' },
+                        { key: 'orders' as SortKey, label: 'الطلبات' },
+                        { key: 'delivered' as SortKey, label: 'مسلّم' },
+                        { key: 'deliveryRate' as SortKey, label: 'معدل التوصيل' },
+                        { key: 'revenue' as SortKey, label: 'الإيراد' },
+                        { key: 'avgOrderValue' as SortKey, label: 'متوسط الطلب' },
+                        { key: 'score' as SortKey, label: 'النتيجة' },
+                        { key: 'tier' as SortKey, label: 'التصنيف' },
+                      ].map(col => (
+                        <TableHead key={col.key} className="cursor-pointer select-none" onClick={() => toggleWilayaSort(col.key)}>
+                          <span className="flex items-center gap-1">
+                            {col.label}
+                            {wilayaSort.key === col.key && (
+                              wilayaSort.dir === 'desc' ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />
+                            )}
+                          </span>
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedWilayas.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center text-[var(--color-text-muted)] py-8">
+                          لا توجد بيانات
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {sortedWilayas.map(w => (
+                      <TableRow key={w.wilaya}>
+                        <TableCell className="font-medium">{w.wilaya}</TableCell>
+                        <TableCell className="tabular-nums text-center">{w.orders}</TableCell>
+                        <TableCell className="tabular-nums text-center">{w.delivered}</TableCell>
+                        <TableCell>
+                          <span className={`tabular-nums font-medium text-sm ${
+                            w.deliveryRate >= 65 ? 'text-[var(--color-success)]' :
+                            w.deliveryRate >= 50 ? 'text-[var(--color-warning)]' :
+                            'text-[var(--color-danger)]'
+                          }`}>
+                            {w.deliveryRate.toFixed(1)}%
+                          </span>
+                        </TableCell>
+                        <TableCell className="tabular-nums">{formatCurrency(w.revenue)}</TableCell>
+                        <TableCell className="tabular-nums">{formatCurrency(w.avgOrderValue)}</TableCell>
+                        <TableCell>
+                          <span className={`tabular-nums font-medium inline-block px-2 py-0.5 rounded ${scoreBg(w.score)}`}
+                            style={{ color: tierColor(w.tier) }}>
+                            {w.score.toFixed(1)}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="tabular-nums font-bold text-lg" style={{ color: tierColor(w.tier) }}>
+                            {w.tier}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              {/* Score legend */}
+              <div className="mt-4 flex flex-wrap gap-4 text-xs text-[var(--color-text-muted)]">
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ background: 'var(--color-success)' }} /> A (≥70) — تصعيد</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ background: 'var(--color-primary)' }} /> B (45-69) — تحسين</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ background: 'var(--color-warning)' }} /> C (25-44) — حذر</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ background: 'var(--color-danger)' }} /> D (&lt;25) — خطر</span>
+                <span>الدرجة = معدل التوصيل×40% + حصة الربح×35% + حصة الطلبات×25%</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Wilaya Bar Charts */}
+          {wilayaAnalysis.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card>
-                <CardHeader><CardTitle>أفضل الولايات — {selectedProduct}</CardTitle></CardHeader>
+                <CardHeader><CardTitle>حجم الطلبات بالولاية</CardTitle></CardHeader>
                 <CardContent>
                   <div className="h-64">
                     <BarChart
-                      labels={analysis.period.topWilayas.map(w => w.wilaya)}
-                      values={analysis.period.topWilayas.map(w => w.orders)}
+                      labels={wilayaAnalysis.slice(0, 10).map(w => w.wilaya)}
+                      values={wilayaAnalysis.slice(0, 10).map(w => w.orders)}
                       color="#7F77DD"
                       horizontal
                     />
@@ -328,41 +511,116 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
                 </CardContent>
               </Card>
               <Card>
-                <CardHeader><CardTitle>معدل التوصيل بالولاية</CardTitle></CardHeader>
+                <CardHeader><CardTitle>معدل التوصيل — أعلى 10 ولايات</CardTitle></CardHeader>
                 <CardContent>
-                  <div className="overflow-y-auto max-h-64">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>الولاية</TableHead>
-                          <TableHead>الطلبات</TableHead>
-                          <TableHead>مسلّم</TableHead>
-                          <TableHead>معدل التوصيل</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {analysis.period.topWilayas.map(w => (
-                          <TableRow key={w.wilaya}>
-                            <TableCell className="font-medium">{w.wilaya}</TableCell>
-                            <TableCell className="tabular-nums">{w.orders}</TableCell>
-                            <TableCell className="tabular-nums text-[var(--color-success)]">{w.delivered}</TableCell>
-                            <TableCell>
-                              <span className={`tabular-nums font-medium text-sm ${
-                                w.deliveryRate >= 65 ? 'text-[var(--color-success)]' :
-                                w.deliveryRate >= 50 ? 'text-[var(--color-warning)]' :
-                                'text-[var(--color-danger)]'
-                              }`}>
-                                {w.deliveryRate.toFixed(1)}%
-                              </span>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                  <div className="h-64">
+                    <BarChart
+                      labels={[...wilayaAnalysis].sort((a, b) => b.deliveryRate - a.deliveryRate).slice(0, 10).map(w => w.wilaya)}
+                      values={[...wilayaAnalysis].sort((a, b) => b.deliveryRate - a.deliveryRate).slice(0, 10).map(w => w.deliveryRate)}
+                      color="#1D9E75"
+                      horizontal
+                    />
                   </div>
                 </CardContent>
               </Card>
             </div>
+          )}
+
+          {/* Competitive Analysis */}
+          {showCompetitor && (
+            <Card>
+              <CardHeader>
+                <CardTitle>التحليل التنافسي — {selectedProduct}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  <div>
+                    <label className="block text-xs text-[var(--color-text-muted)] mb-1">سعر المنافس (دج)</label>
+                    <Input type="number" min={0} placeholder="0"
+                      value={competitorData.competitorPrice || ''}
+                      onChange={e => setCompetitorData(p => ({ ...p, competitorPrice: Number(e.target.value) }))} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[var(--color-text-muted)] mb-1">معدل توصيل السوق (%)</label>
+                    <Input type="number" min={0} max={100} placeholder="70"
+                      value={competitorData.marketAvgDeliveryRate}
+                      onChange={e => setCompetitorData(p => ({ ...p, marketAvgDeliveryRate: Number(e.target.value) }))} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[var(--color-text-muted)] mb-1">متوسط CPA السوق (دج)</label>
+                    <Input type="number" min={0} placeholder="500"
+                      value={competitorData.marketAvgCPA}
+                      onChange={e => setCompetitorData(p => ({ ...p, marketAvgCPA: Number(e.target.value) }))} />
+                  </div>
+                </div>
+
+                {competitive && (
+                  <>
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 p-4 rounded-lg border" style={{ borderColor: competitive.positionColor }}>
+                      <div>
+                        <p className="text-xs text-[var(--color-text-muted)] mb-1">الوضع التنافسي</p>
+                        <p className="text-2xl font-bold" style={{ color: competitive.positionColor }}>
+                          {competitive.positionLabel}
+                        </p>
+                        <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                          النتيجة التنافسية: {competitive.competitiveScore}/100
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className="text-xs rounded-full px-3 py-1 border border-[var(--color-border)]">
+                          فرق السعر: {competitive.priceGap >= 0 ? '+' : ''}{competitive.priceGap.toFixed(1)}%
+                        </span>
+                        <span className="text-xs rounded-full px-3 py-1 border border-[var(--color-border)]">
+                          التوصيل: {competitive.deliveryAdvantage >= 0 ? '+' : ''}{competitive.deliveryAdvantage.toFixed(1)}%
+                        </span>
+                        <span className="text-xs rounded-full px-3 py-1 border border-[var(--color-border)]">
+                          CPA: {competitive.cpaEfficiency >= 0 ? '+' : ''}{competitive.cpaEfficiency.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <p className="text-sm font-semibold mb-2 text-[var(--color-success)]">المزايا التنافسية</p>
+                        {competitive.advantages.length === 0 && (
+                          <p className="text-xs text-[var(--color-text-muted)]">لا توجد مزايا واضحة</p>
+                        )}
+                        {competitive.advantages.map((a, i) => (
+                          <div key={i} className="flex items-start gap-2 mb-2 text-sm">
+                            <span className="text-[var(--color-success)] mt-0.5">✓</span>
+                            <span>{a}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold mb-2 text-[var(--color-danger)]">مواطن الضعف</p>
+                        {competitive.weaknesses.length === 0 && (
+                          <p className="text-xs text-[var(--color-text-muted)]">لا توجد نقاط ضعف واضحة</p>
+                        )}
+                        {competitive.weaknesses.map((w, i) => (
+                          <div key={i} className="flex items-start gap-2 mb-2 text-sm">
+                            <span className="text-[var(--color-danger)] mt-0.5">✗</span>
+                            <span>{w}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-6 p-4 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+                      <p className="text-sm font-semibold mb-2">التوصيات التنافسية</p>
+                      <div className="space-y-2">
+                        {competitive.recommendations.map((r, i) => (
+                          <div key={i} className="flex items-start gap-2 text-sm">
+                            <span className="text-[var(--color-primary)] mt-0.5">{i + 1}.</span>
+                            <span>{r}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
           )}
         </>
       )}
