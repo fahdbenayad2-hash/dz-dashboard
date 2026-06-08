@@ -19,6 +19,7 @@ interface LineChartProps {
     label: string;
     data: number[];
     color?: string;
+    borderDash?: number[];
   }[];
   title?: string;
 }
@@ -38,6 +39,7 @@ export function LineChart({ labels, datasets, title }: LineChartProps) {
       pointRadius: 3,
       pointHoverRadius: 5,
       borderWidth: 2,
+      borderDash: ds.borderDash,
     })),
   };
 

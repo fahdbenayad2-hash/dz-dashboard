@@ -13,6 +13,9 @@ import { RiskCenter } from '@/pages/RiskCenter';
 import { MonthlyReport } from '@/pages/MonthlyReport';
 import { YearlyReport } from '@/pages/YearlyReport';
 import { ProductAnalysis } from '@/pages/ProductAnalysis';
+import { DailyTrends } from '@/features/analytics/DailyTrends';
+import { RiskDashboard } from '@/features/analytics/RiskDashboard';
+import { NotificationSettings } from '@/features/analytics/NotificationSettings';
 import { useSheetData } from '@/hooks/useSheetData';
 import { useTrackingData } from '@/hooks/useTrackingData';
 import { isAuthenticated, logout } from '@/lib/auth';
@@ -126,6 +129,9 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
               <Route path="/monthly-report" element={<ProtectedRoute><MonthlyReport trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/yearly-report" element={<ProtectedRoute><YearlyReport trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/product-analysis" element={<ProtectedRoute><ProductAnalysis trackingOrders={trackingOrders} /></ProtectedRoute>} />
+              <Route path="/daily-trends" element={<ProtectedRoute><DailyTrends trackingOrders={trackingOrders} /></ProtectedRoute>} />
+              <Route path="/risk-dashboard" element={<ProtectedRoute><RiskDashboard trackingOrders={trackingOrders} /></ProtectedRoute>} />
+              <Route path="/notifications" element={<ProtectedRoute><NotificationSettings /></ProtectedRoute>} />
               <Route path="/login" element={<Navigate to="/" replace />} />
             </Routes>
           </main>
