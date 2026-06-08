@@ -6,20 +6,11 @@ import { KPICard } from '@/components/shared/KPICard';
 import { BarChart } from '@/components/charts/BarChart';
 import { LineChart } from '@/components/charts/LineChart';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Package, DollarSign, TrendingUp, CheckCircle } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/lib/utils';
-import { TrendingUp, TrendingDown } from 'lucide-react';
 import {
   getYearComparison, getYearlyTopProducts, getYearlyTopWilayas,
 } from '@/lib/dashboardMetrics';
-
-function GrowthBadge({ value, unit = '%' }: { value: number; unit?: string }) {
-  return (
-    <span className={`inline-flex items-center gap-1 text-xs font-medium ${value >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
-      {value >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-      {value >= 0 ? '+' : ''}{value.toFixed(1)}{unit}
-    </span>
-  );
-}
 
 export function YearlyReport({ trackingOrders }: { trackingOrders: TrackingOrder[] }) {
   const availableYears = useMemo(() => {
@@ -65,14 +56,14 @@ export function YearlyReport({ trackingOrders }: { trackingOrders: TrackingOrder
 
       {/* Section 1: مقارنة — 4 KPI cards */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <KPICard label="إجمالي الطلبات" value={formatNumber(comparison.current.totalOrders)}
-          subLabel={<GrowthBadge value={comparison.growth.orders} />} />
-        <KPICard label="الإيراد (محسوم)" value={formatCurrency(comparison.current.revenue)}
-          subLabel={<GrowthBadge value={comparison.growth.revenue} />} color="#1D9E75" />
-        <KPICard label="صافي الإيراد" value={formatCurrency(comparison.current.netRevenue)}
-          subLabel={<GrowthBadge value={comparison.growth.netRevenue} />} color="#7F77DD" />
-        <KPICard label="معدل التوصيل" value={comparison.current.avgDeliveryRate.toFixed(1) + '%'}
-          subLabel={<GrowthBadge value={comparison.growth.deliveryRate} unit=" نقطة" />} color="#378ADD" />
+        <KPICard icon={<Package className="h-5 w-5" />} label="إجمالي الطلبات" value={formatNumber(comparison.current.totalOrders)}
+          change={comparison.growth.orders} />
+        <KPICard icon={<DollarSign className="h-5 w-5" />} label="الإيراد (محسوم)" value={formatCurrency(comparison.current.revenue)}
+          change={comparison.growth.revenue} color="#1D9E75" />
+        <KPICard icon={<TrendingUp className="h-5 w-5" />} label="صافي الإيراد" value={formatCurrency(comparison.current.netRevenue)}
+          change={comparison.growth.netRevenue} color="#7F77DD" />
+        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="معدل التوصيل" value={comparison.current.avgDeliveryRate.toFixed(1) + '%'}
+          change={comparison.growth.deliveryRate} changeLabel="نقطة" color="#378ADD" />
       </div>
 
       {/* Section 2: مقارنة شهر بشهر */}
