@@ -231,6 +231,7 @@ export interface OrderRiskAssessment {
 export interface CustomerRiskAssessment {
   score: number;
   level: 'low' | 'medium' | 'high' | 'critical';
+  color: string;
   totalOrders: number;
   returnedOrders: number;
   returnRate: number;
