@@ -18,6 +18,7 @@ import { RiskDashboard } from '@/features/analytics/RiskDashboard';
 import { NotificationSettings } from '@/features/analytics/NotificationSettings';
 import { useSheetData } from '@/hooks/useSheetData';
 import { useTrackingData } from '@/hooks/useTrackingData';
+import { useAutoSnapshot } from '@/hooks/useAutoSnapshot';
 import { isAuthenticated, logout } from '@/lib/auth';
 import { classNames } from '@/lib/utils';
 import { Loader2 } from 'lucide-react';
@@ -68,6 +69,8 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
 }) {
   const { orders, loading, error, lastUpdated, refresh } = useSheetData();
   const { trackingOrders, trackingLoading, trackingError } = useTrackingData();
+
+  useAutoSnapshot(trackingOrders);
 
   console.log('[DZ-CHANGE] responsive-layout-loaded');
   console.log('[DZ-CHANGE] layout-desktop-fixed');
