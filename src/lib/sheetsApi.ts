@@ -1,129 +1,45 @@
 import type { Order, OrderStatus, TrackingOrder, StatusCategory } from '@/types';
 
-const BASE_URL = 'https://femmesoir.leaderscod.com';
-const ORDERS_ENDPOINT = '/tenants/api/orders';
-const TRACKING_ENDPOINT = '/tenants/api/tracking-order';
-const ORDERS_LIMIT = 50;
-const TRACKING_LIMIT = 70;
+const SHEET_ID = '1WjloEKAQGJA2Z6vgnhni7aByN4ktmPc0xP7EvAUaMUw';
 
-function getToken(): string {
-  return localStorage.getItem('dz_jwt_token') || '';
-}
-
-function getXAuth(): string {
-  return localStorage.getItem('dz_x_auth') || '';
-}
-
-function buildHeaders(): Record<string, string> {
-  return {
-    'Authorization': 'Bearer ' + getToken(),
-    'x-authorization': getXAuth(),
-    'lang': 'ar',
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
-  };
-}
-
-export function setToken(token: string): void {
-  localStorage.setItem('dz_jwt_token', token);
-}
-
-export function setXAuth(key: string): void {
-  localStorage.setItem('dz_x_auth', key);
-}
-
-export function hasCredentials(): boolean {
-  return !!getToken() && !!getXAuth();
-}
-
-async function apiGet<T>(endpoint: string, params: Record<string, number>): Promise<T | null> {
-  const qs = Object.keys(params)
-    .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))
-    .join('&');
-  const url = `${BASE_URL}${endpoint}?${qs}`;
-  console.log('[DZ-API] fetching', endpoint, params);
-
-  const resp = await fetch(url, { method: 'GET', headers: buildHeaders() });
-
-  if (!resp.ok) {
-    if (resp.status === 401) throw new Error('توكن غير صالح');
-    throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-  }
-
-  return (await resp.json()) as T;
-}
-
-interface ApiResponse<T> {
-  data: T[];
-  all_count?: number;
-}
-
-function parseOrderDate(dateStr: string): string {
-  return (dateStr || '').split('T')[0].split(' ')[0].substring(0, 10);
-}
-
-async function fetchAllPages<T>(
-  endpoint: string,
-  limit: number,
-  mapItem: (item: unknown) => T,
-  getSortId?: (item: T) => number,
-): Promise<T[]> {
-  const all: T[] = [];
-  let page = 0;
-
-  while (true) {
-    const result = await apiGet<ApiResponse<unknown>>(endpoint, { offset: page, limit });
-
-    if (!result || !result.data || result.data.length === 0) break;
-
-    for (const item of result.data) {
-      all.push(mapItem(item));
-    }
-
-    if (result.all_count && (page + 1) * limit >= result.all_count) break;
-    if (result.data.length < limit) break;
-
-    page++;
-  }
-
-  if (getSortId) {
-    all.sort((a, b) => getSortId(b) - getSortId(a));
-  }
-
-  console.log(`[DZ-API] ${endpoint}: ${all.length} items fetched`);
-  return all;
+function fetchSheet(sheetName: string): Promise<{ c: { v: unknown; f?: string }[] | null }[]> {
+  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${sheetName}&headers=1`;
+  return fetch(url)
+    .then(r => r.text())
+    .then(text => {
+      const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\)/);
+      if (!match) throw new Error('Failed to parse Google Sheets response');
+      const response = JSON.parse(match[1]);
+      if (response.status === 'error') throw new Error(response.errors?.[0]?.message || 'Sheet API error');
+      const rows = response.table.rows || [];
+      console.log(`[DZ-SHEET] ${sheetName}: ${rows.length} rows returned`);
+      if (rows.length > 0) console.log(`[DZ-SHEET] ${sheetName} first row sample:`, rows[0]);
+      return rows;
+    });
 }
 
 export async function fetchOrders(): Promise<Order[]> {
-  return fetchAllPages<Order>(
-    ORDERS_ENDPOINT, ORDERS_LIMIT,
-    (item: unknown) => {
-      const o = item as Record<string, unknown>;
-      const customer = o.customer as Record<string, unknown> | undefined;
-      const addrs = o.addrs as Record<string, unknown> | undefined;
-      const wilaya = addrs?.wilaya as Record<string, unknown> | undefined;
-      const productsOrder = (o.products_order as Record<string, unknown>[] | undefined)?.[0];
-      const product = productsOrder?.product as Record<string, unknown> | undefined;
-      const agent = o.agent as Record<string, unknown> | undefined;
-      const statusOrder = o.status_order as Record<string, unknown> | undefined;
-
-      return {
-        id: Number(o.id) || 0,
-        date: parseOrderDate(String(o.created_at || '')),
-        customer: String(customer?.fullname || ''),
-        phone: String(
-          (customer?.phones as Record<string, unknown>[] | undefined)?.[0]?.phone || ''
-        ),
-        wilaya: String(wilaya?.name || ''),
-        status: String(statusOrder?.name || 'Pending') as OrderStatus,
-        product: String(product?.name || ''),
-        total: Number(o.order_total || 0),
-        delivery: Number(o.delivery_cost || 0),
-        agent: String(agent?.fullname || ''),
-      };
-    },
-    (o: Order) => o.id,
-  );
+  const rows = await fetchSheet('Orders');
+  return rows
+    .reduce((acc: Order[], row: { c: { v: unknown; f?: string }[] | null }) => {
+      const cells = row.c;
+      if (!cells) return acc;
+      const id = Number(cells[0]?.v) || 0;
+      if (id <= 0) return acc;
+      acc.push({
+        id,
+        date: String(cells[1]?.f || cells[1]?.v || ''),
+        customer: String(cells[2]?.v || ''),
+        phone: String(cells[3]?.v || ''),
+        wilaya: String(cells[4]?.v || ''),
+        status: String(cells[5]?.v || 'Pending') as OrderStatus,
+        product: String(cells[6]?.v || ''),
+        total: Number(cells[7]?.v) || 0,
+        delivery: Number(cells[8]?.v) || 0,
+        agent: String(cells[9]?.v || ''),
+      });
+      return acc;
+    }, []);
 }
 
 export function classifyTrackingStatus(status: string): StatusCategory {
@@ -141,37 +57,38 @@ export function classifyTrackingStatus(status: string): StatusCategory {
 }
 
 export async function fetchTracking(): Promise<TrackingOrder[]> {
-  return fetchAllPages<TrackingOrder>(
-    TRACKING_ENDPOINT, TRACKING_LIMIT,
-    (item: unknown) => {
-      const t = item as Record<string, unknown>;
-      const order = t.order as Record<string, unknown> | undefined;
-      const confirmedBy = t.confirmed_by as Record<string, unknown> | undefined;
-      const customer = order?.customer as Record<string, unknown> | undefined;
-      const addrs = order?.addrs as Record<string, unknown> | undefined;
-      const wilaya = addrs?.wilaya as Record<string, unknown> | undefined;
-      const productsOrder = (order?.products_order as Record<string, unknown>[] | undefined)?.[0];
-      const product = productsOrder?.product as Record<string, unknown> | undefined;
-
-      const rawStatus = String(t.tracking_status || '');
-      const rawDate = String(t.date_and_time || '');
+  const rows = await fetchSheet('Tracking');
+  return rows
+    .reduce((acc: TrackingOrder[], row: { c: { v: unknown; f?: string }[] | null }) => {
+      const cells = row.c;
+      if (!cells) return acc;
+      // gviz columns: [0] Order ID | [1] Date | [2] Agent | [3] Customer | [4] Wilaya | [5] Tracking Status | [6] Product | [7] Total | [8] Delivery | [9] Driver
+      const orderId = String(cells[0]?.v || '');
+      if (!orderId) return acc;
+      const rawStatus = String(cells[5]?.v || '');
+      const rawDate = String(cells[1]?.f || cells[1]?.v || '');
       const parsedDate = rawDate ? new Date(rawDate) : null;
       const date = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null;
-
-      return {
-        orderId: String(order?.id || t.id || ''),
+      console.log('[DZ-CHANGE] Tracking parsed sample:', {
+        orderId: String(cells[0]?.v || ''),
+        status: String(cells[5]?.v || ''),
+        date: String(cells[1]?.f || cells[1]?.v || ''),
+        total: Number(cells[7]?.v) || 0,
+        wilaya: String(cells[4]?.v || ''),
+      });
+      acc.push({
+        orderId,
         date,
-        agent: String(confirmedBy?.fullname || ''),
-        customer: String(customer?.fullname || ''),
-        wilaya: String(wilaya?.name || ''),
+        agent: String(cells[2]?.v || ''),
+        customer: String(cells[3]?.v || ''),
+        wilaya: String(cells[4]?.v || ''),
         trackingStatus: rawStatus,
         statusCategory: classifyTrackingStatus(rawStatus),
-        product: String(product?.name || ''),
-        total: Number(order?.order_total || 0),
-        delivery: Number(order?.delivery_cost || 0),
-        driver: String(t.driver_name || ''),
-      };
-    },
-    (t: TrackingOrder) => Number(t.orderId),
-  );
+        product: String(cells[6]?.v || ''),
+        total: Number(cells[7]?.v) || 0,
+        delivery: Number(cells[8]?.v) || 0,
+        driver: String(cells[9]?.v || ''),
+      });
+      return acc;
+    }, []);
 }
