@@ -1,15 +1,21 @@
-import { RefreshCw, Moon, Sun, Menu } from 'lucide-react';
+import { RefreshCw, Moon, Sun, Clock, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tooltip } from '@/components/ui/tooltip';
 
 interface TopBarProps {
   dark: boolean;
   onToggleDark: () => void;
+  lastUpdated: Date | null;
   onRefresh: () => void;
   loading: boolean;
   onToggleSidebar?: () => void;
 }
 
-export function TopBar({ dark, onToggleDark, onRefresh, loading, onToggleSidebar }: TopBarProps) {
+export function TopBar({ dark, onToggleDark, lastUpdated, onRefresh, loading, onToggleSidebar }: TopBarProps) {
+  const formatTime = (d: Date) => {
+    return d.toLocaleTimeString('ar-DZ', { hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
     <header className="h-16 border-b border-[var(--color-border)] bg-[var(--color-card)] flex items-center justify-between px-6">
       <div className="flex items-center gap-4">
@@ -29,6 +35,15 @@ export function TopBar({ dark, onToggleDark, onRefresh, loading, onToggleSidebar
       </div>
 
       <div className="flex items-center gap-3">
+        {lastUpdated && (
+          <Tooltip content={`آخر تحديث: ${lastUpdated.toLocaleString('ar-DZ')}`}>
+            <span className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] tabular-nums">
+              <Clock className="h-3.5 w-3.5" />
+              {formatTime(lastUpdated)}
+            </span>
+          </Tooltip>
+        )}
+
         <Button
           variant="ghost"
           size="sm"
