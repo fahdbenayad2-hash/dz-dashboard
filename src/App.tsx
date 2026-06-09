@@ -67,8 +67,8 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
   setDark: (v: boolean | ((prev: boolean) => boolean)) => void;
   onLogout: () => void;
 }) {
-  const { orders, loading, error, lastUpdated, refresh } = useSheetData();
-  const { trackingOrders, trackingLoading, trackingError } = useTrackingData();
+  const { orders, loading, lastUpdated, refresh } = useSheetData();
+  const { trackingOrders, trackingLoading } = useTrackingData();
 
   useAutoSnapshot(trackingOrders);
 
@@ -82,22 +82,6 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
         <div className="text-center space-y-4">
           <Loader2 className="h-10 w-10 animate-spin text-[var(--color-primary)] mx-auto" />
           <p className="text-sm text-[var(--color-text-muted)]">جاري تحميل البيانات...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || trackingError) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-[var(--color-bg)]">
-        <div className="text-center space-y-4">
-          <p className="text-[var(--color-danger)] text-lg">{error || trackingError}</p>
-          <button
-            onClick={refresh}
-            className="px-4 py-2 bg-[var(--color-primary)] text-white rounded-lg text-sm"
-          >
-            إعادة المحاولة
-          </button>
         </div>
       </div>
     );
