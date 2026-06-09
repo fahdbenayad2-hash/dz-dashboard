@@ -28,7 +28,7 @@ export function RiskDashboard({ trackingOrders }: RiskDashboardProps) {
   }, [highRiskOrders]);
 
   const prediction = useMemo(() => {
-    return predictDailyRisk(snapshots as any);
+    return predictDailyRisk(snapshots);
   }, [snapshots]);
 
   const anomalies = useMemo(() => {

@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback } from 'react';
-import type { TrackingOrder, DailySnapshot, StoredSnapshot } from '@/types';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import type { TrackingOrder, DailySnapshot } from '@/types';
 import { getSettledMetrics, getDateISOString, isValidDate } from '@/lib/dashboardMetrics';
 import { addSnapshot, getAllSnapshots } from '@/lib/storageManager';
 
@@ -20,11 +20,22 @@ interface DailyHistoryResult {
   saveToday: () => void;
 }
 
-export function useDailyHistory(trackingOrders: TrackingOrder[]): DailyHistoryResult {
-  const [version, setVersion] = useState(0);
+function loadSnapshots(): DailySnapshot[] {
+  const raw = getAllSnapshots();
+  return raw.map(s => s.data as DailySnapshot).filter(Boolean);
+}
 
-  const today = getDateISOString(new Date());
-  const todayStr = today;
+export function useDailyHistory(trackingOrders: TrackingOrder[]): DailyHistoryResult {
+  const [snapshots, setSnapshots] = useState<DailySnapshot[]>(() => loadSnapshots());
+
+  useEffect(() => {
+    setSnapshots(loadSnapshots());
+    const handler = () => setSnapshots(loadSnapshots());
+    window.addEventListener('snapshot-saved', handler);
+    return () => window.removeEventListener('snapshot-saved', handler);
+  }, []);
+
+  const todayStr = getDateISOString(new Date());
 
   const todayOrders = useMemo(() => {
     return trackingOrders.filter(t => {
@@ -70,15 +81,6 @@ export function useDailyHistory(trackingOrders: TrackingOrder[]): DailyHistoryRe
     totalOrders: todayMetrics.totalOrders - yesterdayMetrics.totalOrders,
   }), [todayMetrics, yesterdayMetrics]);
 
-  const storedSnapshots = useMemo(() => {
-    const raw = getAllSnapshots();
-    return raw.map((s: StoredSnapshot) => s.data as DailySnapshot).filter(Boolean);
-  }, [version]);
-
-  const snapshots = useMemo(() => {
-    return storedSnapshots as DailySnapshot[];
-  }, [storedSnapshots]);
-
   const last30 = useMemo(() => {
     const sorted = [...snapshots].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     return sorted.slice(-30);
@@ -105,6 +107,10 @@ export function useDailyHistory(trackingOrders: TrackingOrder[]): DailyHistoryRe
     return snapshots.some(s => s.date === todayStr);
   }, [snapshots, todayStr]);
 
+  const refresh = useCallback(() => {
+    setSnapshots(loadSnapshots());
+  }, []);
+
   const saveToday = useCallback(() => {
     const settled = getSettledMetrics(todayOrders);
     const snapshot: DailySnapshot = {
@@ -115,9 +121,10 @@ export function useDailyHistory(trackingOrders: TrackingOrder[]): DailyHistoryRe
       totalRevenue: settled.deliveredRevenue,
     };
     addSnapshot(snapshot);
-    setVersion(v => v + 1);
+    window.dispatchEvent(new CustomEvent('snapshot-saved'));
+    refresh();
     console.log('[DZ-CHANGE] useDailyHistory saveToday', snapshot);
-  }, [todayOrders, todayStr]);
+  }, [todayOrders, todayStr, refresh]);
 
   return { snapshots, todayMetrics, delta, ma7, ma30, todaySaved, saveToday };
 }

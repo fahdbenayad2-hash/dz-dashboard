@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { TrackingOrder, DailySnapshot } from '@/types';
+import type { TrackingOrder } from '@/types';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { DeltaCard } from '@/components/shared/DeltaCard';
@@ -10,6 +10,12 @@ import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, Save } from 'lucide
 
 interface DailyTrendsProps {
   trackingOrders: TrackingOrder[];
+}
+
+function pctChange(current: number, previous: number): number {
+  if (previous === 0 && current === 0) return 0;
+  if (previous === 0) return current > 0 ? 100 : -100;
+  return ((current - previous) / Math.abs(previous)) * 100;
 }
 
 export function DailyTrends({ trackingOrders }: DailyTrendsProps) {
@@ -40,10 +46,6 @@ export function DailyTrends({ trackingOrders }: DailyTrendsProps) {
         const avgDelivery = slice.reduce((sum, d) => {
           const st = d.delivered + d.returned;
           return sum + (st > 0 ? (d.delivered / st) * 100 : 0);
-        }, 0) / 7;
-        const avgReturn = slice.reduce((sum, d) => {
-          const st = d.delivered + d.returned;
-          return sum + (st > 0 ? (d.returned / st) * 100 : 0);
         }, 0) / 7;
         ma7Data.push(avgDelivery);
       } else {
@@ -89,20 +91,19 @@ export function DailyTrends({ trackingOrders }: DailyTrendsProps) {
           icon={<DollarSign className="h-5 w-5" />}
           label="صافي الإيراد"
           value={formatCurrency(todayMetrics.netRevenue)}
-          change={delta.netRevenue > 0 ? (delta.netRevenue / Math.max(Math.abs(todayMetrics.netRevenue - delta.netRevenue), 1)) * 100 : 0}
+          change={pctChange(todayMetrics.netRevenue, todayMetrics.netRevenue - delta.netRevenue)}
           changeLabel="عن أمس"
         />
         <DeltaCard
           icon={<ShoppingCart className="h-5 w-5" />}
           label="إجمالي الطلبات"
           value={formatNumber(todayMetrics.totalOrders)}
-          change={delta.totalOrders > 0 ? (delta.totalOrders / Math.max(todayMetrics.totalOrders - delta.totalOrders, 1)) * 100 : 0}
+          change={pctChange(todayMetrics.totalOrders, todayMetrics.totalOrders - delta.totalOrders)}
           changeLabel="عن أمس"
-          invertSemantics={false}
         />
       </div>
 
-      {chartData && (
+      {chartData ? (
         <Card>
           <CardHeader>
             <CardTitle>آخر 30 يوم — معدل التوصيل والإرجاع</CardTitle>
@@ -121,9 +122,7 @@ export function DailyTrends({ trackingOrders }: DailyTrendsProps) {
             </div>
           </CardContent>
         </Card>
-      )}
-
-      {!chartData && (
+      ) : (
         <Card>
           <CardContent className="py-12 text-center text-[var(--color-text-muted)]">
             لا توجد بيانات كافية. احفظ نقاط بيانات يومية لظهور الاتجاهات.
@@ -136,13 +135,12 @@ export function DailyTrends({ trackingOrders }: DailyTrendsProps) {
           {snapshots.length} يوم محفوظ
           {snapshots.length > 0 && ` | آخر تحديث: ${snapshots[snapshots.length - 1]?.date}`}
         </div>
-        {!todaySaved && (
+        {!todaySaved ? (
           <Button onClick={saveToday} className="flex items-center gap-2">
             <Save className="h-4 w-4" />
             حفظ snapshot اليوم
           </Button>
-        )}
-        {todaySaved && (
+        ) : (
           <span className="text-xs text-[var(--color-success)] font-medium">
             ✓ تم حفظ اليوم
           </span>

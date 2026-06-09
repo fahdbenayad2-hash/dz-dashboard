@@ -68,6 +68,7 @@ export function useAutoSnapshot(trackingOrders: TrackingOrder[]): void {
         };
 
         addSnapshot(snapshot);
+        window.dispatchEvent(new CustomEvent('snapshot-saved'));
         console.log('[DZ-CHANGE] useAutoSnapshot auto-saved', snapshot);
         scheduleNext();
       }, delay);
