@@ -49,7 +49,7 @@ function useDashboardData(orders: Order[], tracking: TrackingOrder[]) {
       last14Days: revenueTrend.map(d => d.date),
       dailyRevenue: revenueTrend.map(d => d.revenue),
       dailyOrders: revenueTrend.map(d => d.orders),
-      pendingOrders: metrics.totalOrders,
+      pendingOrders: metrics.pendingOrders,
     };
   }, [orders, tracking]);
 }

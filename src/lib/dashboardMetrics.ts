@@ -23,6 +23,10 @@ export function getDateISOString(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+export function getDateISOStringLocal(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 export function getOrderMetrics(orders: Order[]) {
   const totalOrders = orders.length;
   const confirmedOrders = orders.filter(o => normalizeStatus(o.status) === 'Confirmed').length;
@@ -467,10 +471,12 @@ export function getAgentDailyVsMonthlyAvg(tracking: TrackingOrder[], agentName: 
 }
 
 export function getTodayOrders(orders: Order[]) {
-  const today = getDateISOString(new Date());
+  const today = getDateISOStringLocal(new Date());
   const todayOrders = orders.filter(o => {
+    const status = normalizeStatus(o.status);
+    if (status !== 'Pending' && status !== 'Waiting') return false;
     const d = parseOrderDate(o.date);
-    return d && getDateISOString(d) === today;
+    return d && getDateISOStringLocal(d) === today;
   });
   return {
     ordersToday: todayOrders.length,
@@ -479,11 +485,11 @@ export function getTodayOrders(orders: Order[]) {
 }
 
 export function getTodayDelivered(tracking: TrackingOrder[]) {
-  const today = getDateISOString(new Date());
+  const today = getDateISOStringLocal(new Date());
   const count = tracking.filter(t =>
     t.statusCategory === 'delivered' &&
     isValidDate(t.date) &&
-    getDateISOString(t.date) === today
+    getDateISOStringLocal(t.date) === today
   ).length;
   return count;
 }
