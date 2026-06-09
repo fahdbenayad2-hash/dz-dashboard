@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login } from '@/lib/auth';
-import { setToken, setXAuth, hasCredentials } from '@/lib/sheetsApi';
-import { Lock, Eye, EyeOff, Key, Globe } from 'lucide-react';
+import { Lock, Eye, EyeOff } from 'lucide-react';
 
 interface LoginProps {
   onLogin: () => void;
@@ -10,8 +9,6 @@ interface LoginProps {
 
 export function Login({ onLogin }: LoginProps) {
   const [password, setPassword] = useState('');
-  const [jwt, setJwt] = useState(localStorage.getItem('dz_jwt_token') || '');
-  const [xAuth, setXAuth] = useState(localStorage.getItem('dz_x_auth') || '');
   const [error, setError] = useState(false);
   const [show, setShow] = useState(false);
   const navigate = useNavigate();
@@ -21,8 +18,6 @@ export function Login({ onLogin }: LoginProps) {
     setError(false);
     const success = login(password);
     if (success) {
-      setToken(jwt);
-      setXAuth(xAuth);
       onLogin();
       navigate('/', { replace: true });
     } else {
@@ -39,54 +34,26 @@ export function Login({ onLogin }: LoginProps) {
               <Lock className="h-7 w-7 text-[var(--color-primary)]" />
             </div>
             <h1 className="text-xl font-bold text-[var(--color-text)]">منصة ذكاء التجارة</h1>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">أدخل بيانات الدخول</p>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">أدخل كلمة المرور للمتابعة</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-3">
-              <div className="relative">
-                <Globe className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-text-muted)]" />
-                <input
-                  type="text"
-                  value={jwt}
-                  onChange={e => setJwt(e.target.value)}
-                  placeholder="JWT Token (Bearer)"
-                  className="flex h-11 w-full rounded-lg border border-[var(--color-border)] bg-transparent px-4 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent pr-10"
-                  dir="ltr"
-                />
-              </div>
-
-              <div className="relative">
-                <Key className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-text-muted)]" />
-                <input
-                  type="text"
-                  value={xAuth}
-                  onChange={e => setXAuth(e.target.value)}
-                  placeholder="X-AUTH Key"
-                  className="flex h-11 w-full rounded-lg border border-[var(--color-border)] bg-transparent px-4 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent pr-10"
-                  dir="ltr"
-                />
-              </div>
-
-              <div className="border-t border-[var(--color-border)] pt-3">
-                <div className="relative">
-                  <input
-                    type={show ? 'text' : 'password'}
-                    value={password}
-                    onChange={e => { setPassword(e.target.value); setError(false); }}
-                    placeholder="كلمة المرور"
-                    className="flex h-11 w-full rounded-lg border border-[var(--color-border)] bg-transparent px-4 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent pl-10"
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShow(s => !s)}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                  >
-                    {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
+            <div className="relative">
+              <input
+                type={show ? 'text' : 'password'}
+                value={password}
+                onChange={e => { setPassword(e.target.value); setError(false); }}
+                placeholder="كلمة المرور"
+                className="flex h-11 w-full rounded-lg border border-[var(--color-border)] bg-transparent px-4 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent pl-10"
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={() => setShow(s => !s)}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+              >
+                {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
             </div>
 
             {error && (
