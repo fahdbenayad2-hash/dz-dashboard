@@ -5,6 +5,8 @@ import { fetchTracking } from '@/lib/sheetsApi';
 export function useTrackingData() {
   const [trackingOrders, setTrackingOrders] = useState<TrackingOrder[]>([]);
   const [trackingLoading, setTrackingLoading] = useState(true);
+  const [trackingError, setTrackingError] = useState<string | null>(null);
+  const [trackingLastUpdated, setTrackingLastUpdated] = useState<Date | null>(null);
   const initialLoadDone = useRef(false);
 
   const load = useCallback(async (showLoading = false) => {
@@ -12,8 +14,10 @@ export function useTrackingData() {
     try {
       const data = await fetchTracking();
       setTrackingOrders(data);
+      setTrackingLastUpdated(new Date());
+      setTrackingError(null);
     } catch {
-      // silent
+      setTrackingError('Tracking غير متاح');
     } finally {
       setTrackingLoading(false);
       initialLoadDone.current = true;
@@ -28,5 +32,5 @@ export function useTrackingData() {
 
   const refresh = useCallback(() => load(false), [load]);
 
-  return { trackingOrders, trackingLoading, refresh };
+  return { trackingOrders, trackingLoading, trackingError, trackingLastUpdated, refresh };
 }

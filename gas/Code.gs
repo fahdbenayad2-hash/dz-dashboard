@@ -204,7 +204,12 @@ function syncOrders() {
       ]);
     }
 
-    if (data.data.length < CONFIG.ORDERS_LIMIT) break;
+    // FIX BUG 3 — use all_count to detect last page (same as syncTracking)
+    if (data.all_count != null) {
+      if ((page + 1) * CONFIG.ORDERS_LIMIT >= data.all_count) break;
+    } else {
+      if (data.data.length < CONFIG.ORDERS_LIMIT) break;
+    }
     page++;
     Utilities.sleep(100);
   }
@@ -222,16 +227,51 @@ function syncOrders() {
   return allRows.length;
 }
 
+// FIX BUG 1 — helper to extract month key from date string
+function _extractMonthKey_(dateStr, tz) {
+  try {
+    var d = new Date(dateStr);
+    if (isNaN(d.getTime())) return null;
+    return Utilities.formatDate(d, tz, 'yyyy-MM');
+  } catch (e) { return null; }
+}
+
+// FIX BUG 1 — returns all Tracking-YYYY-MM sheet names in the spreadsheet
+function _getMonthlyTrackingSheets_(ss) {
+  var all = ss.getSheets();
+  var result = [];
+  for (var i = 0; i < all.length; i++) {
+    var name = all[i].getName();
+    if (/^Tracking-\d{4}-\d{2}$/.test(name)) result.push(all[i]);
+  }
+  result.sort(function(a, b) { return b.getName().localeCompare(a.getName()); }); // newest first
+  return result;
+}
+
+// FIX BUG 1 — aggregate all rows from monthly tracking sheets
+function _readAllTrackingRows_(sheets) {
+  var allRows = [];
+  for (var si = 0; si < sheets.length; si++) {
+    var sh = sheets[si];
+    if (sh.getLastRow() < 2) continue;
+    var data = sh.getRange(2, 1, sh.getLastRow() - 1, 10).getValues();
+    for (var ri = 0; ri < data.length; ri++) {
+      allRows.push(data[ri]);
+    }
+  }
+  return allRows;
+}
+
 // ──────────────────────────────────────────────
-//  2. SYNC TRACKING — Full Refresh
+//  2. SYNC TRACKING — Monthly tabs (avoids gviz 50k cell limit)
 // ──────────────────────────────────────────────
 
 function syncTracking() {
   var ss        = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet     = ensureSheet_('Tracking', CONFIG.TRACKING_HEADERS);
+  var tz        = Session.getScriptTimeZone();
   var startTime = Date.now();
   var timeoutMs = CONFIG.TIMEOUT_MINUTES * 60 * 1000;
-  var allRows   = [];
+  var monthly   = {};  // key 'YYYY-MM' → array of rows
   var page      = 0;
 
   ss.toast('📦 جاري جلب بيانات التتبع...', 'مزامنة التتبع', -1);
@@ -254,7 +294,7 @@ function syncTracking() {
 
     for (var i = 0; i < data.data.length; i++) {
       var item = data.data[i];
-      allRows.push([
+      var row = [
         (item.order && item.order.id) || '',
         item.date_and_time || '',
         (item.confirmed_by && item.confirmed_by.fullname) || '',
@@ -265,7 +305,12 @@ function syncTracking() {
         Number((item.order && item.order.order_total)  || 0),
         Number((item.order && item.order.delivery_cost) || 0),
         item.driver_name || '',
-      ]);
+      ];
+      var key = _extractMonthKey_(item.date_and_time, tz);
+      if (key) {
+        if (!monthly[key]) monthly[key] = [];
+        monthly[key].push(row);
+      }
     }
 
     // توقف إذا وصلنا للنهاية
@@ -279,17 +324,31 @@ function syncTracking() {
     Utilities.sleep(200);
   }
 
-  // رتّب من الأحدث للأقدم حسب Order ID (عمود 1)
-  allRows.sort(function(a, b) { return Number(b[0]) - Number(a[0]); });
-
-  // اكتب دفعة واحدة
-  if (allRows.length > 0) {
-    sheet.getRange(2, 1, allRows.length, CONFIG.TRACKING_HEADERS.length).setValues(allRows);
+  // اكتب كل شهر في شيت منفصل
+  var keys = Object.keys(monthly).sort();
+  for (var m = 0; m < keys.length; m++) {
+    var monthKey = keys[m];
+    var rows     = monthly[monthKey];
+    // رتّب من الأحدث للأقدم حسب Order ID
+    rows.sort(function(a, b) { return Number(b[0]) - Number(a[0]); });
+    var sheetName = 'Tracking-' + monthKey;
+    var sh = ensureSheet_(sheetName, CONFIG.TRACKING_HEADERS);
+    if (rows.length > 0) {
+      sh.getRange(2, 1, rows.length, CONFIG.TRACKING_HEADERS.length).setValues(rows);
+    }
     SpreadsheetApp.flush();
   }
 
-  ss.toast('✅ Tracking: ' + allRows.length + ' سجل — مرتب من الأحدث', 'مزامنة التتبع', 5);
-  return allRows.length;
+  // حدّث شيت الـ Tracking-Index بقائمة الأشهر المتاحة
+  var idxSheet = ensureSheet_('Tracking-Index', ['Month Key']);
+  if (keys.length > 0) {
+    var idxData = keys.map(function(k) { return [k]; });
+    idxSheet.getRange(2, 1, idxData.length, 1).setValues(idxData);
+  }
+
+  var total = keys.reduce(function(s, k) { return s + monthly[k].length; }, 0);
+  ss.toast('✅ Tracking: ' + total + ' سجل عبر ' + keys.length + ' شهر — مرتب من الأحدث', 'مزامنة التتبع', 5);
+  return total;
 }
 
 // ──────────────────────────────────────────────
@@ -306,7 +365,7 @@ function _classifyStatus(status) {
   return 'others';
 }
 
-function _computeMetrics(ordersSheet, trackingSheet, tz, todayStr) {
+function _computeMetrics(ordersSheet, trackingSheets, tz, todayStr) {
   var m = {
     ordersToday: 0, revenueToday: 0,
     totalOrders: 0, totalRevenue: 0,
@@ -332,10 +391,9 @@ function _computeMetrics(ordersSheet, trackingSheet, tz, todayStr) {
     }
   }
 
-  // Tracking: كل المقاييس
-  if (trackingSheet && trackingSheet.getLastRow() > 1) {
-    var tData = trackingSheet.getRange(2, 1, trackingSheet.getLastRow() - 1, 10).getValues();
-    m.totalTracking = tData.length;
+  // FIX BUG 1 — read all monthly tracking sheets
+  var tData = _readAllTrackingRows_(trackingSheets);
+  m.totalTracking = tData.length;
 
     for (var ti = 0; ti < tData.length; ti++) {
       var tr       = tData[ti];
@@ -381,7 +439,8 @@ function _computeMetrics(ordersSheet, trackingSheet, tz, todayStr) {
 function buildDashboard() {
   var ss           = SpreadsheetApp.getActiveSpreadsheet();
   var ordersSheet  = ss.getSheetByName('Orders');
-  var trackingSheet = ss.getSheetByName('Tracking');
+  // FIX BUG 1 — use monthly tracking sheets instead of single
+  var trackingSheets = _getMonthlyTrackingSheets_(ss);
   var dashSheet    = ss.getSheetByName('Dashboard');
 
   if (!dashSheet) { ss.toast('❌ شيت Dashboard غير موجود!', 'خطأ', 5); return; }
@@ -389,7 +448,7 @@ function buildDashboard() {
   var tz       = Session.getScriptTimeZone();
   var today    = new Date();
   var todayStr = Utilities.formatDate(today, tz, 'yyyy-MM-dd');
-  var m        = _computeMetrics(ordersSheet, trackingSheet, tz, todayStr);
+  var m        = _computeMetrics(ordersSheet, trackingSheets, tz, todayStr);
 
   dashSheet.clearContents();
   dashSheet.clearFormats();
@@ -570,17 +629,16 @@ function setupFiltersSheet() {
 function refreshFilterDropdowns() {
   var ss           = SpreadsheetApp.getActiveSpreadsheet();
   var fSheet       = ss.getSheetByName('Filters');
-  var trackingSheet = ss.getSheetByName('Tracking');
+  // FIX BUG 1 — use monthly tracking sheets instead of single
+  var trackingSheets = _getMonthlyTrackingSheets_(ss);
   if (!fSheet) return;
 
   var wSet={}, aSet={}, pSet={};
-  if (trackingSheet && trackingSheet.getLastRow() > 1) {
-    var data = trackingSheet.getRange(2,1,trackingSheet.getLastRow()-1,10).getValues();
-    data.forEach(function(row) {
-      var w=(row[4]||'').toString().trim(), a=(row[2]||'').toString().trim(), p=(row[6]||'').toString().trim();
-      if(w) wSet[w]=true; if(a) aSet[a]=true; if(p) pSet[p]=true;
-    });
-  }
+  var tData = _readAllTrackingRows_(trackingSheets);
+  tData.forEach(function(row) {
+    var w=(row[4]||'').toString().trim(), a=(row[2]||'').toString().trim(), p=(row[6]||'').toString().trim();
+    if(w) wSet[w]=true; if(a) aSet[a]=true; if(p) pSet[p]=true;
+  });
   var mkRule = function(list) {
     return SpreadsheetApp.newDataValidation()
       .requireValueInList(['الكل'].concat(list.sort()), true)
@@ -594,9 +652,10 @@ function refreshFilterDropdowns() {
 function buildFilteredReport() {
   var ss           = SpreadsheetApp.getActiveSpreadsheet();
   var fSheet       = ss.getSheetByName('Filters');
-  var trackingSheet = ss.getSheetByName('Tracking');
+  // FIX BUG 1 — use monthly tracking sheets instead of single
+  var trackingSheets = _getMonthlyTrackingSheets_(ss);
   if (!fSheet)        { SpreadsheetApp.getUi().alert('❌ شيت Filters غير موجود!'); return; }
-  if (!trackingSheet || trackingSheet.getLastRow() < 2) { SpreadsheetApp.getUi().alert('❌ شيت Tracking فارغ!'); return; }
+  if (trackingSheets.length === 0) { SpreadsheetApp.getUi().alert('❌ لا توجد شيتات Tracking شهرية!'); return; }
 
   var fWilaya  = fSheet.getRange('C3').getValue().toString().trim();
   var fAgent   = fSheet.getRange('C4').getValue().toString().trim();
@@ -605,7 +664,7 @@ function buildFilteredReport() {
   var fEnd     = fSheet.getRange('C7').getValue().toString().trim();
 
   var tz   = Session.getScriptTimeZone();
-  var data = trackingSheet.getRange(2,1,trackingSheet.getLastRow()-1,10).getValues();
+  var data = _readAllTrackingRows_(trackingSheets);
 
   var filtered = data.filter(function(row) {
     var dateStr = '';

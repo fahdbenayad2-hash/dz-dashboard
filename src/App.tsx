@@ -68,7 +68,7 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
   onLogout: () => void;
 }) {
   const { orders, loading, lastUpdated, refresh } = useSheetData();
-  const { trackingOrders, trackingLoading } = useTrackingData();
+  const { trackingOrders, trackingLoading, refresh: refreshTracking } = useTrackingData();
 
   useAutoSnapshot(trackingOrders);
 
@@ -76,7 +76,8 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
   console.log('[DZ-CHANGE] layout-desktop-fixed');
   console.log('[DZ-CHANGE] layout-mobile-fixed');
 
-  if (loading || trackingLoading) {
+  // FIX BUG 4 — only block UI on orders (fast), tracking loads async
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-[var(--color-bg)]">
         <div className="text-center space-y-4">
@@ -101,7 +102,7 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
             dark={dark}
             onToggleDark={() => setDark(d => !d)}
             lastUpdated={lastUpdated}
-            onRefresh={refresh}
+            onRefresh={() => { refresh(); refreshTracking(); }}
             loading={loading}
             onToggleSidebar={() => setSidebarCollapsed(c => !c)}
           />
@@ -110,7 +111,6 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
               <Route path="/" element={<ProtectedRoute><Dashboard orders={orders} trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/products" element={<ProtectedRoute><Products trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/agents" element={<ProtectedRoute><Agents orders={orders} trackingOrders={trackingOrders} /></ProtectedRoute>} />
-              <Route path="/orders" element={<ProtectedRoute><Orders orders={orders} /></ProtectedRoute>} />
               <Route path="/tracking" element={<ProtectedRoute><Tracking trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/risk" element={<ProtectedRoute><RiskCenter trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/monthly-report" element={<ProtectedRoute><MonthlyReport trackingOrders={trackingOrders} /></ProtectedRoute>} />
