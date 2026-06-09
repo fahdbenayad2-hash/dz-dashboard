@@ -67,7 +67,7 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
   setDark: (v: boolean | ((prev: boolean) => boolean)) => void;
   onLogout: () => void;
 }) {
-  const { orders, loading, error, lastUpdated, refresh } = useSheetData();
+  const { orders, loading, error, refresh } = useSheetData();
   const { trackingOrders, trackingLoading, trackingError } = useTrackingData();
 
   useAutoSnapshot(trackingOrders);
@@ -115,8 +115,7 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
         >
           <TopBar
             dark={dark}
-            onToggleDark={() => setDark(d => !d)}
-            lastUpdated={lastUpdated}
+            onToggleDark={() => setDark(d => d)}
             onRefresh={refresh}
             loading={loading}
             onToggleSidebar={() => setSidebarCollapsed(c => !c)}

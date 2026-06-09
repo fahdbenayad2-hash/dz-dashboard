@@ -6,7 +6,6 @@ export function useSheetData() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const initialLoadDone = useRef(false);
 
   const load = useCallback(async (showLoading = false) => {
@@ -14,7 +13,6 @@ export function useSheetData() {
     try {
       const data = await fetchOrders();
       setOrders(data);
-      setLastUpdated(new Date());
       setError(null);
     } catch {
       if (!initialLoadDone.current) {
@@ -34,5 +32,5 @@ export function useSheetData() {
 
   const refresh = useCallback(() => load(false), [load]);
 
-  return { orders, loading, error, lastUpdated, refresh };
+  return { orders, loading, error, refresh };
 }
