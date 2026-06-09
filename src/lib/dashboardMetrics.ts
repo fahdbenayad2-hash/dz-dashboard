@@ -477,3 +477,13 @@ export function getTodayOrders(orders: Order[]) {
     revenueToday: todayOrders.reduce((s, o) => s + o.total, 0),
   };
 }
+
+export function getTodayDelivered(tracking: TrackingOrder[]) {
+  const today = getDateISOString(new Date());
+  const count = tracking.filter(t =>
+    t.statusCategory === 'delivered' &&
+    isValidDate(t.date) &&
+    getDateISOString(t.date) === today
+  ).length;
+  return count;
+}
