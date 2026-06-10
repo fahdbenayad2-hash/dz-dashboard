@@ -485,11 +485,5 @@ export function getTodayOrders(orders: Order[]) {
 }
 
 export function getTodayDelivered(tracking: TrackingOrder[]) {
-  const today = getDateISOStringLocal(new Date());
-  const count = tracking.filter(t =>
-    t.statusCategory === 'delivered' &&
-    isValidDate(t.date) &&
-    getDateISOStringLocal(t.date) === today
-  ).length;
-  return count;
+  return tracking.filter(t => t.statusCategory === 'delivered').length;
 }

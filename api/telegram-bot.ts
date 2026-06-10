@@ -193,9 +193,7 @@ async function handleStats(): Promise<string> {
     return isValidDate(d) && toLocalDateKey(d) === today;
   });
 
-  const todayDelivered = tracking.filter(t =>
-    t.statusCategory === 'delivered' && isValidDate(t.date) && toLocalDateKey(t.date) === today
-  ).length;
+  const todayDelivered = tracking.filter(t => t.statusCategory === 'delivered').length;
 
   return [
     `📊 *تقرير اليوم — ${today}*`,
