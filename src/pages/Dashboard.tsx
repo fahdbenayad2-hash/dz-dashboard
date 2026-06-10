@@ -15,7 +15,6 @@ import { formatCurrency, formatNumber } from '@/lib/utils';
 import {
   getOrderMetrics, normalizeStatus,
   getTrackingMetrics, getTrackingStatusDistribution, getAgentCountsTracking, getWilayaCountsTracking, getProductCountsTracking, getMonthlyRevenueTracking, getDailyRevenueTracking, getTodayOrders,
-  getTodayDelivered,
   getSettledMetrics,
 } from '@/lib/dashboardMetrics';
 
@@ -31,14 +30,13 @@ function useDashboardData(orders: Order[], tracking: TrackingOrder[]) {
     const monthlyData = getMonthlyRevenueTracking(tracking);
     const revenueTrend = getDailyRevenueTracking(tracking, 14);
     const settledMetrics = getSettledMetrics(tracking);
-    const deliveredToday = getTodayDelivered(tracking);
+
 
     console.log('[DZ-CHANGE] tracking-metrics', trackingMetrics);
     console.log('[DZ-CHANGE] today-orders', today);
 
     return {
       ...trackingMetrics,
-      deliveredToday,
       ...today,
       trackingStatus,
       agentData, wilayaData, productData,
@@ -95,7 +93,6 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         <KPICard icon={<AlarmClock className="h-5 w-5" />} label="طلبات اليوم (جديدة)" value={formatNumber(data.ordersToday)} color="#378ADD" />
-        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم توصيله اليوم" value={formatNumber(data.deliveredToday)} color="#1D9E75" />
         <KPICard icon={<DollarSign className="h-5 w-5" />} label="مداخيل اليوم" value={formatCurrency(data.revenueToday)} color="#1D9E75" />
         <KPICard icon={<Package className="h-5 w-5" />} label="قيد التوصيل" value={formatNumber(data.inTransit + data.inDelivery)} color="#EF9F27" />
         <KPICard icon={<CheckCircle className="h-5 w-5" />} label="معدل التوصيل (محسوم)" value={data.settledMetrics.deliveryRate.toFixed(1) + '%'} change={0} changeLabel={`من ${formatNumber(data.settledMetrics.settledCount)} طلب`} color="#1D9E75" />
