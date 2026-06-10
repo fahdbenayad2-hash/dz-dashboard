@@ -227,6 +227,13 @@ function ProductAnalysisView({
                 {' — '}متوسط الشحن: <span className="font-medium text-[var(--color-text)]">{formatCurrency(period.avgDeliveryCost)}</span>
                 {analysis.cpa > 0 && <> — CPA: <span className="font-medium text-[var(--color-text)]">{formatCurrency(analysis.cpa)}</span></>}
                 {' — '}ROAS: <span className="font-medium text-[var(--color-text)]">{analysis.roas.toFixed(2)}x</span>
+                {expenses.unitPrice > 0 && (
+                  <> — سعر البيع: <span className="font-medium text-[var(--color-text)]">{formatCurrency(expenses.unitPrice)}</span>
+                  {' — '}تكلفة الوحدة: <span className="font-medium text-[var(--color-text)]">{formatCurrency(expenses.unitCost)}</span>
+                  {' — '}هامش القطعة: <span className={`font-medium ${expenses.unitPrice > expenses.unitCost ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                    {(((expenses.unitPrice - expenses.unitCost) / expenses.unitPrice) * 100).toFixed(1)}%
+                  </span></>
+                )}
               </div>
             </div>
           </CardContent>
@@ -506,7 +513,7 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
   const [dateTo,   setDateTo]     = useState(defaults.to);
   const [expenses, setExpenses]   = useState<ProductExpenses>({
     adSpend: 0, otherExpenses: 0, expenseNotes: '',
-    unitCost: 0, shippingFeePerOrder: 0, returnFeePerOrder: 0, packagingCostPerOrder: 0,
+    unitCost: 0, unitPrice: 0, shippingFeePerOrder: 0, returnFeePerOrder: 0, packagingCostPerOrder: 0,
   });
   const [submitted, setSubmitted] = useState(false);
   const [showCompetitor, setShowCompetitor] = useState(false);
@@ -615,6 +622,12 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
                 <Input type="number" min={0} placeholder="0"
                   value={expenses.unitCost || ''}
                   onChange={e => handleExpenseChange('unitCost', Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="block text-xs text-[var(--color-text-muted)] mb-1">سعر البيع (دج)</label>
+                <Input type="number" min={0} placeholder="0"
+                  value={expenses.unitPrice || ''}
+                  onChange={e => handleExpenseChange('unitPrice', Number(e.target.value))} />
               </div>
               <div>
                 <label className="block text-xs text-[var(--color-text-muted)] mb-1">رسوم شحن/طلب (دج)</label>

@@ -113,6 +113,7 @@ export interface ProductExpenses {
   otherExpenses: number;
   expenseNotes: string;
   unitCost: number;
+  unitPrice: number;
   shippingFeePerOrder: number;
   returnFeePerOrder: number;
   packagingCostPerOrder: number;
