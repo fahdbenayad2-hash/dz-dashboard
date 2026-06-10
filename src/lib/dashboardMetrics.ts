@@ -215,6 +215,16 @@ export function getProductCountsTracking(tracking: TrackingOrder[]) {
   return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
 }
 
+export function getProductOrderCountsTracking(tracking: TrackingOrder[]) {
+  const map = new Map<string, number>();
+  tracking
+    .filter(t => t.statusCategory === 'delivered')
+    .forEach(t => {
+      if (t.product) map.set(t.product, (map.get(t.product) || 0) + 1);
+    });
+  return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+}
+
 export function getMonthlyRevenueTracking(tracking: TrackingOrder[]) {
   const map = new Map<string, { orders: number; revenue: number }>();
   tracking.forEach(t => {
@@ -278,7 +288,7 @@ export function getMonthlyBreakdown(tracking: TrackingOrder[], yearMonth: string
     orders: filtered,
     metrics: getTrackingMetrics(filtered),
     statusDist: getTrackingStatusDistribution(filtered),
-    topProducts: getProductCountsTracking(filtered),
+    topProducts: getProductOrderCountsTracking(filtered),
     topWilayas: getWilayaCountsTracking(filtered),
     dailyTrend: getDailyRevenueTracking(filtered, daysInMonth, lastDayOfMonth),
   };
