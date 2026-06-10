@@ -514,16 +514,19 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
     competitorPrice: 0, marketAvgDeliveryRate: 70, marketAvgCPA: 500,
   });
 
-  const productAnalyses = useMemo(() => {
-    if (selectedProducts.length === 0 || !submitted) return [];
-    return selectedProducts.map(productName => {
-      const filter: ProductPeriodFilter = { productName, dateFrom, dateTo };
-      const period = analyzeProductPeriod(trackingOrders, filter);
-      const analysis = buildFinancialAnalysis(period, expenses);
-      const wilaya = buildWilayaAnalysis(trackingOrders, filter, expenses);
-      const competitive = showCompetitor ? buildCompetitiveAnalysis(analysis, competitorData) : null;
-      return { productName, period, analysis, wilaya, competitive };
-    });
+  const combinedAnalysis = useMemo(() => {
+    if (selectedProducts.length === 0 || !submitted) return null;
+    const label = selectedProducts.join(' + ');
+    const unifiedTracking = trackingOrders.map(t => ({
+      ...t,
+      product: selectedProducts.includes(t.product) ? label : t.product,
+    }));
+    const filter: ProductPeriodFilter = { productName: label, dateFrom, dateTo };
+    const period = analyzeProductPeriod(unifiedTracking, filter);
+    const analysis = buildFinancialAnalysis(period, expenses);
+    const wilaya = buildWilayaAnalysis(unifiedTracking, filter, expenses);
+    const competitive = showCompetitor ? buildCompetitiveAnalysis(analysis, competitorData) : null;
+    return { productName: label, period, analysis, wilaya, competitive };
   }, [selectedProducts, dateFrom, dateTo, expenses, showCompetitor, competitorData, submitted, trackingOrders]);
 
   const handleToggleProduct = (product: string) => {
@@ -544,23 +547,6 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
     if (key !== 'expenseNotes') setSubmitted(false);
   };
 
-  const comparisonRows = useMemo(() => {
-    if (productAnalyses.length < 2) return [];
-    return [
-      { label: 'إجمالي الطلبات', values: productAnalyses.map(pa => formatNumber(pa.period.totalOrders)) },
-      { label: 'تم التوصيل', values: productAnalyses.map(pa => formatNumber(pa.period.delivered)) },
-      { label: 'معدل التوصيل', values: productAnalyses.map(pa => pa.period.deliveryRate.toFixed(1) + '%') },
-      { label: 'المرتجعات', values: productAnalyses.map(pa => formatNumber(pa.period.returned)) },
-      { label: 'الإيراد (مسلّم)', values: productAnalyses.map(pa => formatCurrency(pa.period.grossRevenue)) },
-      { label: 'صافي الربح', values: productAnalyses.map(pa => formatCurrency(pa.analysis.trueNetProfit)) },
-      { label: 'الهامش الحقيقي', values: productAnalyses.map(pa => pa.analysis.trueNetMargin.toFixed(1) + '%') },
-      { label: 'ROI', values: productAnalyses.map(pa => pa.analysis.roi.toFixed(1) + '%') },
-      { label: 'ربح القطعة', values: productAnalyses.map(pa => formatCurrency(pa.analysis.profitPerUnit)) },
-      { label: 'نقطة التعادل', values: productAnalyses.map(pa => formatNumber(pa.analysis.breakEvenUnits)) },
-      { label: 'القرار', values: productAnalyses.map(pa => pa.analysis.decisionLabel) },
-    ];
-  }, [productAnalyses]);
-
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">تحليل المنتج المتقدم</h1>
@@ -569,7 +555,7 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
         <CardHeader>
           <CardTitle>اختر المنتجات والفترة الزمنية</CardTitle>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
-            اختر منتجاً واحداً للتحليل الفردي، أو منتجين للمقارنة جنباً إلى جنب
+            يمكنك اختيار منتج واحد أو أكثر — إذا اخترت عدة منتجات بنفس الاسم مختلف، سيتم دمج تحليلهم كمنتج واحد
           </p>
         </CardHeader>
         <CardContent>
@@ -591,7 +577,7 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
             </div>
             {selectedProducts.length > 0 && (
               <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                تم اختيار {selectedProducts.length} منتج{selectedProducts.length >= 2 ? ' — سيتم عرض مقارنة' : ''}
+                تم اختيار {selectedProducts.length} منتج
               </p>
             )}
           </div>
@@ -659,7 +645,7 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
 
           <div className="mt-4 flex flex-wrap gap-3">
             <Button onClick={handleSubmit} disabled={selectedProducts.length === 0 || !dateFrom || !dateTo} className="w-full md:w-auto">
-              تحليل {selectedProducts.length >= 2 ? 'المقارنة' : 'المنتج'}
+              تحليل المنتج
             </Button>
             <Button variant="outline" onClick={() => setShowCompetitor(p => !p)} className="w-full md:w-auto">
               {showCompetitor ? 'إخفاء' : 'إظهار'} التحليل التنافسي
@@ -668,73 +654,26 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
         </CardContent>
       </Card>
 
-      {/* Comparison Table */}
-      {productAnalyses.length >= 2 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>مقارنة المنتجات</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="whitespace-nowrap">المعيار</TableHead>
-                    {productAnalyses.map(pa => (
-                      <TableHead key={pa.productName} className="whitespace-nowrap text-center font-bold">
-                        {pa.productName}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {comparisonRows.map(row => (
-                    <TableRow key={row.label}>
-                      <TableCell className="font-medium whitespace-nowrap">{row.label}</TableCell>
-                      {row.values.map((val, i) => (
-                        <TableCell key={i} className="text-center tabular-nums">{val}</TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+      {combinedAnalysis && (
+        <ProductAnalysisView
+          productName={combinedAnalysis.productName}
+          period={combinedAnalysis.period}
+          analysis={combinedAnalysis.analysis}
+          wilayaAnalysis={combinedAnalysis.wilaya}
+          competitive={combinedAnalysis.competitive}
+          showCompetitor={showCompetitor}
+          competitorData={competitorData}
+          setCompetitorData={setCompetitorData}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          expenses={expenses}
+        />
       )}
 
-      {/* Individual Product Analyses */}
-      {productAnalyses.map((pa, index) => (
-        <div key={pa.productName}>
-          {productAnalyses.length >= 2 && (
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-8 w-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
-                style={{ backgroundColor: index === 0 ? 'var(--color-primary)' : 'var(--color-success)' }}>
-                {index + 1}
-              </div>
-              <h2 className="text-lg font-bold">{pa.productName}</h2>
-            </div>
-          )}
-          <ProductAnalysisView
-            productName={pa.productName}
-            period={pa.period}
-            analysis={pa.analysis}
-            wilayaAnalysis={pa.wilaya}
-            competitive={pa.competitive}
-            showCompetitor={showCompetitor}
-            competitorData={competitorData}
-            setCompetitorData={setCompetitorData}
-            dateFrom={dateFrom}
-            dateTo={dateTo}
-            expenses={expenses}
-          />
-        </div>
-      ))}
-
-      {productAnalyses.length === 0 && (
+      {!combinedAnalysis && (
         <Card>
           <CardContent className="py-16 text-center text-[var(--color-text-muted)]">
-            اختر منتجاً أو أكثر وحدد الفترة الزمنية ثم اضغط "تحليل المقارنة"
+            اختر منتجاً أو أكثر وحدد الفترة الزمنية ثم اضغط "تحليل المنتج"
           </CardContent>
         </Card>
       )}
