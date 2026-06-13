@@ -14,17 +14,6 @@ dist-ssr
 .env
 .env.*
 
-# Python
-__pycache__
-*.pyc
-*.pyo
-.pytest_cache
-*.egg-info
-.venv
-venv
-dz-bot/.env
-dz-bot/dz_bot.db
-
 # Other git repos
 dz-commerce/
 
