@@ -24,6 +24,10 @@ __pycache__
 venv
 dz-bot/.env
 dz-bot/dz_bot.db
+
+# Other git repos
+dz-commerce/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
