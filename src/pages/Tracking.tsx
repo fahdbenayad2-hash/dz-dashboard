@@ -69,8 +69,28 @@ export function Tracking({ trackingOrders }: { trackingOrders: TrackingOrder[] }
     });
   }, [trackingOrders, search, categoryFilter, repeatOnly, repeatDelivered, deliveredCounts]);
 
-  const paged = filtered.slice(page * perPage, (page + 1) * perPage);
-  const totalPages = Math.ceil(filtered.length / perPage);
+  const customerSummary = useMemo(() => {
+    const map = new Map<string, { count: number; totalRevenue: number; totalDelivery: number; orders: TrackingOrder[] }>();
+    trackingOrders
+      .filter(t => t.statusCategory === 'delivered' && repeatDelivered.has(t.customer))
+      .forEach(t => {
+        const entry = map.get(t.customer);
+        if (entry) {
+          entry.count++;
+          entry.totalRevenue += t.total;
+          entry.totalDelivery += t.delivery;
+          entry.orders.push(t);
+        } else {
+          map.set(t.customer, { count: 1, totalRevenue: t.total, totalDelivery: t.delivery, orders: [t] });
+        }
+      });
+    return [...map.entries()].sort((a, b) => b[1].count - a[1].count);
+  }, [trackingOrders, repeatDelivered]);
+
+  const paged = repeatOnly
+    ? customerSummary.slice(page * perPage, (page + 1) * perPage)
+    : filtered.slice(page * perPage, (page + 1) * perPage);
+  const totalPages = Math.ceil((repeatOnly ? customerSummary.length : filtered.length) / perPage);
 
   return (
     <div className="space-y-6">
@@ -106,7 +126,7 @@ export function Tracking({ trackingOrders }: { trackingOrders: TrackingOrder[] }
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between flex-wrap gap-3">
-            <CardTitle>سجل التتبع ({formatNumber(filtered.length)})</CardTitle>
+            <CardTitle>{repeatOnly ? `الزبائن المتكررون (${formatNumber(customerSummary.length)})` : `سجل التتبع (${formatNumber(filtered.length)})`}</CardTitle>
             <div className="flex items-center gap-3">
               <Button
                 variant={repeatOnly ? 'default' : 'outline'}
@@ -139,55 +159,88 @@ export function Tracking({ trackingOrders }: { trackingOrders: TrackingOrder[] }
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>رقم الطلب</TableHead>
-                  <TableHead>التاريخ</TableHead>
-                  <TableHead>الوكيل</TableHead>
-                  <TableHead>العميل</TableHead>
-                  <TableHead>الولاية</TableHead>
-                  <TableHead>حالة التتبع</TableHead>
-                  <TableHead>المنتج</TableHead>
-                  <TableHead>الإجمالي</TableHead>
-                  <TableHead>الشحن</TableHead>
-                  <TableHead>السائق</TableHead>
+                  {repeatOnly ? (
+                    <>
+                      <TableHead>العميل</TableHead>
+                      <TableHead>عدد الطلبيات</TableHead>
+                      <TableHead>إجمالي الإيراد</TableHead>
+                      <TableHead>إجمالي الشحن</TableHead>
+                      <TableHead>آخر طلب</TableHead>
+                      <TableHead>الولاية</TableHead>
+                    </>
+                  ) : (
+                    <>
+                      <TableHead>رقم الطلب</TableHead>
+                      <TableHead>التاريخ</TableHead>
+                      <TableHead>الوكيل</TableHead>
+                      <TableHead>العميل</TableHead>
+                      <TableHead>الولاية</TableHead>
+                      <TableHead>حالة التتبع</TableHead>
+                      <TableHead>المنتج</TableHead>
+                      <TableHead>الإجمالي</TableHead>
+                      <TableHead>الشحن</TableHead>
+                      <TableHead>السائق</TableHead>
+                    </>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paged.map(t => {
-                  const cfg = categoryConfig[t.statusCategory] || categoryConfig.others;
-                  const Icon = cfg.icon;
-                  return (
-                    <TableRow key={t.orderId}>
-                      <TableCell className="font-medium tabular-nums">{t.orderId}</TableCell>
-                      <TableCell className="tabular-nums">{t.date ? t.date.toLocaleDateString('ar-DZ') : '-'}</TableCell>
-                      <TableCell>{t.agent}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1.5">
-                          {t.customer}
-                          {deliveredCounts.get(t.customer)! >= 2 && (
-                            <Badge variant="success" className="text-[10px] px-1 py-0">{deliveredCounts.get(t.customer)}</Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>{t.wilaya}</TableCell>
-                      <TableCell>
-                        <span className="inline-flex items-center gap-1">
-                          <Badge variant={cfg.variant}>
-                            <Icon className="h-3 w-3 ml-1" />
-                            {cfg.label}
-                          </Badge>
-                        </span>
-                      </TableCell>
-                      <TableCell className="max-w-40 truncate">{t.product}</TableCell>
-                      <TableCell className="tabular-nums">{formatCurrency(t.total)}</TableCell>
-                      <TableCell className="tabular-nums">{formatCurrency(t.delivery)}</TableCell>
-                      <TableCell>{t.driver || '-'}</TableCell>
-                    </TableRow>
-                  );
-                })}
+                {repeatOnly ? (
+                  (paged as [string, { count: number; totalRevenue: number; totalDelivery: number; orders: TrackingOrder[] }][]).map(([customer, data]) => {
+                    const lastOrder = data.orders.reduce((latest, o) =>
+                      o.date && (!latest.date || o.date > latest.date) ? o : latest
+                    , data.orders[0]);
+                    return (
+                      <TableRow key={customer}>
+                        <TableCell className="font-medium">{customer}</TableCell>
+                        <TableCell>
+                          <Badge variant="success" className="text-sm px-2 py-0.5">{data.count}</Badge>
+                        </TableCell>
+                        <TableCell className="tabular-nums">{formatCurrency(data.totalRevenue)}</TableCell>
+                        <TableCell className="tabular-nums">{formatCurrency(data.totalDelivery)}</TableCell>
+                        <TableCell className="tabular-nums">{lastOrder.date ? lastOrder.date.toLocaleDateString('ar-DZ') : '-'}</TableCell>
+                        <TableCell>{lastOrder.wilaya}</TableCell>
+                      </TableRow>
+                    );
+                  })
+                ) : (
+                  (paged as TrackingOrder[]).map(t => {
+                    const cfg = categoryConfig[t.statusCategory] || categoryConfig.others;
+                    const Icon = cfg.icon;
+                    return (
+                      <TableRow key={t.orderId}>
+                        <TableCell className="font-medium tabular-nums">{t.orderId}</TableCell>
+                        <TableCell className="tabular-nums">{t.date ? t.date.toLocaleDateString('ar-DZ') : '-'}</TableCell>
+                        <TableCell>{t.agent}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            {t.customer}
+                            {deliveredCounts.get(t.customer)! >= 2 && (
+                              <Badge variant="success" className="text-[10px] px-1 py-0">{deliveredCounts.get(t.customer)}</Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{t.wilaya}</TableCell>
+                        <TableCell>
+                          <span className="inline-flex items-center gap-1">
+                            <Badge variant={cfg.variant}>
+                              <Icon className="h-3 w-3 ml-1" />
+                              {cfg.label}
+                            </Badge>
+                          </span>
+                        </TableCell>
+                        <TableCell className="max-w-40 truncate">{t.product}</TableCell>
+                        <TableCell className="tabular-nums">{formatCurrency(t.total)}</TableCell>
+                        <TableCell className="tabular-nums">{formatCurrency(t.delivery)}</TableCell>
+                        <TableCell>{t.driver || '-'}</TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
                 {paged.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center text-[var(--color-text-muted)] py-8">
-                      لا توجد بيانات تتبع
+                    <TableCell colSpan={repeatOnly ? 6 : 10} className="text-center text-[var(--color-text-muted)] py-8">
+                      لا توجد بيانات
                     </TableCell>
                   </TableRow>
                 )}
