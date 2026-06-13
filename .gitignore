@@ -23,6 +23,7 @@ __pycache__
 .venv
 venv
 dz-bot/.env
+dz-bot/dz_bot.db
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
