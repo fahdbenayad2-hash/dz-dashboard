@@ -462,7 +462,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   let update: TelegramUpdate;
   try {
-    update = await req.json();
+    update = (await req.json()) as TelegramUpdate;
   } catch {
     return new Response('Invalid JSON', { status: 400 });
   }
