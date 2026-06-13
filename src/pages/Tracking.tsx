@@ -18,7 +18,7 @@ const categoryConfig: Record<string, { label: string; variant: 'success' | 'dang
   others: { label: 'أخرى', variant: 'outline', icon: HelpCircle },
 };
 
-/** normalise a string for fuzzy matching: lowercase + strip diacritics + collapse spaces */
+/** Normalise a string: lowercase + strip diacritics + collapse spaces */
 function norm(s: string): string {
   return s
     .toLowerCase()
@@ -28,109 +28,27 @@ function norm(s: string): string {
     .trim();
 }
 
+/**
+ * Composite key = phone + normalised(name) + normalised(wilaya)
+ * All three must match for two records to be considered the same customer.
+ * If phone is missing, the record is excluded from repeat detection.
+ */
+function customerKey(phone: string, name: string, wilaya: string): string | null {
+  const p = phone.trim();
+  if (!p) return null; // no phone → can't reliably identify
+  return `${p}__${norm(name)}__${norm(wilaya)}`;
+}
+
 type CustomerGroup = {
-  groupId: string;          // canonical key (first phone seen, or "name|wilaya")
-  phones: Set<string>;
+  key: string;
+  phone: string;
   names: Set<string>;
-  wilayas: Set<string>;
+  wilaya: string;
   count: number;
   totalRevenue: number;
   totalDelivery: number;
   orders: TrackingOrder[];
 };
-
-/**
- * Build customer groups for delivered orders.
- * Two records belong to the same group if they share:
- *   - the same phone number, OR
- *   - the same normalised (name + wilaya) pair
- *
- * We do a two-pass union:
- *   pass 1 → index by phone and by name|wilaya
- *   pass 2 → merge groups that overlap
- */
-function buildCustomerGroups(
-  trackingOrders: TrackingOrder[],
-  orderPhone: Map<string, string>   // customer name → phone (from Orders sheet)
-): Map<string, CustomerGroup> {
-
-  const delivered = trackingOrders.filter(t => t.statusCategory === 'delivered');
-
-  // ── pass 1: assign a tentative groupId to each order ──────────────────────
-  // Union-Find parent map (groupId → groupId)
-  const parent = new Map<string, string>();
-  function find(x: string): string {
-    if (!parent.has(x)) parent.set(x, x);
-    if (parent.get(x) !== x) parent.set(x, find(parent.get(x)!));
-    return parent.get(x)!;
-  }
-  function union(a: string, b: string) {
-    a = find(a); b = find(b);
-    if (a !== b) parent.set(b, a);
-  }
-
-  // index: phone → first seen groupId
-  const phoneIndex = new Map<string, string>();
-  // index: norm(name)|norm(wilaya) → first seen groupId
-  const nameWilayaIndex = new Map<string, string>();
-
-  delivered.forEach(t => {
-    const phone = orderPhone.get(t.customer) || '';
-    const nameKey = norm(t.customer);
-    const nwKey = `${nameKey}|${norm(t.wilaya)}`;
-
-    // determine the base key for this record
-    const baseKey = phone || nwKey;
-
-    if (phone) {
-      if (!phoneIndex.has(phone)) phoneIndex.set(phone, baseKey);
-      else union(baseKey, phoneIndex.get(phone)!);
-    }
-
-    if (!nameWilayaIndex.has(nwKey)) nameWilayaIndex.set(nwKey, baseKey);
-    else union(baseKey, nameWilayaIndex.get(nwKey)!);
-
-    // also union phone and name+wilaya if both exist
-    if (phone && nameWilayaIndex.has(nwKey)) {
-      union(phoneIndex.get(phone) || baseKey, nameWilayaIndex.get(nwKey)!);
-    }
-  });
-
-  // ── pass 2: aggregate into groups ─────────────────────────────────────────
-  const groups = new Map<string, CustomerGroup>();
-
-  delivered.forEach(t => {
-    const phone = orderPhone.get(t.customer) || '';
-    const nameKey = norm(t.customer);
-    const nwKey = `${nameKey}|${norm(t.wilaya)}`;
-    const baseKey = phone || nwKey;
-    const gid = find(baseKey);
-
-    let g = groups.get(gid);
-    if (!g) {
-      g = {
-        groupId: gid,
-        phones: new Set(),
-        names: new Set(),
-        wilayas: new Set(),
-        count: 0,
-        totalRevenue: 0,
-        totalDelivery: 0,
-        orders: [],
-      };
-      groups.set(gid, g);
-    }
-    if (phone) g.phones.add(phone);
-    g.names.add(t.customer);
-    g.wilayas.add(t.wilaya);
-    g.count++;
-    g.totalRevenue += t.total;
-    g.totalDelivery += t.delivery;
-    g.orders.push(t);
-  });
-
-  return groups;
-}
 
 export function Tracking({ orders = [], trackingOrders }: { orders?: Order[]; trackingOrders: TrackingOrder[] }) {
   const [search, setSearch] = useState('');
@@ -150,34 +68,59 @@ export function Tracking({ orders = [], trackingOrders }: { orders?: Order[]; tr
     return orderPhone.get(t.customer) || '';
   }
 
-  // ── build smart customer groups ──────────────────────────────────────────
-  const allGroups = useMemo(
-    () => buildCustomerGroups(trackingOrders, orderPhone),
-    [trackingOrders, orderPhone]
-  );
+  // ── build customer groups for delivered orders ──────────────────────────
+  // Key = phone + name + wilaya (all three must match)
+  const allGroups = useMemo(() => {
+    const map = new Map<string, CustomerGroup>();
+    trackingOrders
+      .filter(t => t.statusCategory === 'delivered')
+      .forEach(t => {
+        const phone = getPhone(t);
+        const key = customerKey(phone, t.customer, t.wilaya);
+        if (!key) return; // skip if no phone
 
-  // repeat groups = delivered ≥ 2
+        let g = map.get(key);
+        if (!g) {
+          g = {
+            key,
+            phone,
+            names: new Set(),
+            wilaya: t.wilaya,
+            count: 0,
+            totalRevenue: 0,
+            totalDelivery: 0,
+            orders: [],
+          };
+          map.set(key, g);
+        }
+        g.names.add(t.customer);
+        g.count++;
+        g.totalRevenue += t.total;
+        g.totalDelivery += t.delivery;
+        g.orders.push(t);
+      });
+    return map;
+  }, [trackingOrders, orderPhone]);
+
+  // repeat = delivered ≥ 2, sorted by count desc
   const repeatGroups = useMemo(
     () => [...allGroups.values()].filter(g => g.count >= 2).sort((a, b) => b.count - a.count),
     [allGroups]
   );
 
-  // set of groupIds that are "repeat"
-  const repeatGroupIds = useMemo(() => new Set(repeatGroups.map(g => g.groupId)), [repeatGroups]);
+  const repeatKeys = useMemo(() => new Set(repeatGroups.map(g => g.key)), [repeatGroups]);
 
-  // map: every delivered order's baseKey → its groupId
-  const orderGroupId = useMemo(() => {
-    const map = new Map<string, string>(); // orderId → groupId
-    allGroups.forEach(g => {
-      g.orders.forEach(o => map.set(o.orderId, g.groupId));
-    });
+  // orderId → group key (for badge in normal view)
+  const orderKeyMap = useMemo(() => {
+    const map = new Map<string, string>();
+    allGroups.forEach(g => g.orders.forEach(o => map.set(o.orderId, g.key)));
     return map;
   }, [allGroups]);
 
   const stats = useMemo(() => getTrackingMetrics(trackingOrders), [trackingOrders]);
   useMemo(() => getTrackingStatusDistribution(trackingOrders), [trackingOrders]);
 
-  // ── filtered list for normal view ────────────────────────────────────────
+  // ── filtered list (normal view) ─────────────────────────────────────────
   const filtered = useMemo(() => {
     let list = [...trackingOrders];
     if (search) {
@@ -194,15 +137,14 @@ export function Tracking({ orders = [], trackingOrders }: { orders?: Order[]; tr
       list = list.filter(t => t.statusCategory === categoryFilter);
     }
     if (repeatOnly) {
-      // show only delivered orders that belong to a repeat group
-      list = list.filter(t =>
-        t.statusCategory === 'delivered' &&
-        repeatGroupIds.has(orderGroupId.get(t.orderId) || '')
-      );
+      list = list.filter(t => {
+        const key = orderKeyMap.get(t.orderId);
+        return key ? repeatKeys.has(key) : false;
+      });
       return list.sort((a, b) => {
-        const ga = allGroups.get(orderGroupId.get(a.orderId) || '');
-        const gb = allGroups.get(orderGroupId.get(b.orderId) || '');
-        return (gb?.count || 0) - (ga?.count || 0);
+        const ca = allGroups.get(orderKeyMap.get(a.orderId) || '')?.count ?? 0;
+        const cb = allGroups.get(orderKeyMap.get(b.orderId) || '')?.count ?? 0;
+        return cb - ca;
       });
     }
     return list.sort((a, b) => {
@@ -210,20 +152,18 @@ export function Tracking({ orders = [], trackingOrders }: { orders?: Order[]; tr
       const bTime = b.date ? b.date.getTime() : 0;
       return bTime - aTime;
     });
-  }, [trackingOrders, search, categoryFilter, repeatOnly, repeatGroupIds, orderGroupId, allGroups]);
+  }, [trackingOrders, search, categoryFilter, repeatOnly, repeatKeys, orderKeyMap, allGroups]);
 
-  // ── filtered repeat groups (for summary view) ────────────────────────────
+  // ── filtered repeat groups (summary view) ───────────────────────────────
   const filteredGroups = useMemo(() => {
-    if (!repeatOnly) return repeatGroups;
     if (!search) return repeatGroups;
     const q = norm(search);
-    return repeatGroups.filter(g => {
-      if ([...g.phones].some(p => p.includes(q))) return true;
-      if ([...g.names].some(n => norm(n).includes(q))) return true;
-      if ([...g.wilayas].some(w => norm(w).includes(q))) return true;
-      return false;
-    });
-  }, [repeatGroups, search, repeatOnly]);
+    return repeatGroups.filter(g =>
+      g.phone.includes(q) ||
+      [...g.names].some(n => norm(n).includes(q)) ||
+      norm(g.wilaya).includes(q)
+    );
+  }, [repeatGroups, search]);
 
   const paged = repeatOnly
     ? filteredGroups.slice(page * perPage, (page + 1) * perPage)
@@ -264,18 +204,11 @@ export function Tracking({ orders = [], trackingOrders }: { orders?: Order[]; tr
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-2">
-              <CardTitle>
-                {repeatOnly
-                  ? `الزبائن المتكررون (${formatNumber(filteredGroups.length)})`
-                  : `سجل التتبع (${formatNumber(filtered.length)})`}
-              </CardTitle>
-              {repeatOnly && (
-                <span className="text-xs text-[var(--color-text-muted)] bg-[var(--color-surface-raised)] px-2 py-0.5 rounded-full">
-                  هاتف · اسم+ولاية
-                </span>
-              )}
-            </div>
+            <CardTitle>
+              {repeatOnly
+                ? `الزبائن المتكررون (${formatNumber(filteredGroups.length)})`
+                : `سجل التتبع (${formatNumber(filtered.length)})`}
+            </CardTitle>
             <div className="flex items-center gap-3 flex-wrap">
               <Button
                 variant={repeatOnly ? 'default' : 'outline'}
@@ -312,7 +245,7 @@ export function Tracking({ orders = [], trackingOrders }: { orders?: Order[]; tr
                 <TableRow>
                   {repeatOnly ? (
                     <>
-                      <TableHead>الأسماء</TableHead>
+                      <TableHead>الاسم</TableHead>
                       <TableHead>الهاتف</TableHead>
                       <TableHead>الولاية</TableHead>
                       <TableHead>عدد الطلبيات</TableHead>
@@ -343,27 +276,14 @@ export function Tracking({ orders = [], trackingOrders }: { orders?: Order[]; tr
                       o.date && (!latest.date || o.date > latest.date) ? o : latest,
                       g.orders[0]
                     );
-                    const phones = [...g.phones].join(' / ') || '—';
-                    const names = [...g.names].join(' / ');
-                    const wilayas = [...g.wilayas].join(' / ');
-                    // determine match badge: phone, name+wilaya, or both
-                    const hasPhone = g.phones.size > 0;
-                    const hasNameWilaya = g.names.size > 1 || g.wilayas.size > 0;
+                    const displayName = [...g.names].join(' / ');
                     return (
-                      <TableRow key={g.groupId}>
-                        <TableCell className="max-w-48">
-                          <div className="font-medium truncate" title={names}>{names}</div>
-                          <div className="flex gap-1 mt-0.5 flex-wrap">
-                            {hasPhone && (
-                              <span className="text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 px-1.5 py-0.5 rounded-full">هاتف</span>
-                            )}
-                            {hasNameWilaya && (
-                              <span className="text-[10px] bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 px-1.5 py-0.5 rounded-full">اسم+ولاية</span>
-                            )}
-                          </div>
+                      <TableRow key={g.key}>
+                        <TableCell className="font-medium max-w-48 truncate" title={displayName}>
+                          {displayName}
                         </TableCell>
-                        <TableCell dir="ltr" className="text-xs font-mono whitespace-nowrap">{phones}</TableCell>
-                        <TableCell className="text-sm">{wilayas}</TableCell>
+                        <TableCell dir="ltr" className="text-xs font-mono">{g.phone}</TableCell>
+                        <TableCell>{g.wilaya}</TableCell>
                         <TableCell>
                           <Badge variant="success" className="text-sm px-2 py-0.5">{g.count}</Badge>
                         </TableCell>
@@ -379,9 +299,9 @@ export function Tracking({ orders = [], trackingOrders }: { orders?: Order[]; tr
                   (paged as TrackingOrder[]).map(t => {
                     const cfg = categoryConfig[t.statusCategory] || categoryConfig.others;
                     const Icon = cfg.icon;
-                    const gid = orderGroupId.get(t.orderId);
-                    const isRepeat = gid ? repeatGroupIds.has(gid) : false;
-                    const repeatCount = gid ? (allGroups.get(gid)?.count ?? 0) : 0;
+                    const key = orderKeyMap.get(t.orderId);
+                    const isRepeat = key ? repeatKeys.has(key) : false;
+                    const repeatCount = key ? (allGroups.get(key)?.count ?? 0) : 0;
                     return (
                       <TableRow key={t.orderId}>
                         <TableCell className="font-medium tabular-nums">{t.orderId}</TableCell>
@@ -397,12 +317,10 @@ export function Tracking({ orders = [], trackingOrders }: { orders?: Order[]; tr
                         </TableCell>
                         <TableCell>{t.wilaya}</TableCell>
                         <TableCell>
-                          <span className="inline-flex items-center gap-1">
-                            <Badge variant={cfg.variant}>
-                              <Icon className="h-3 w-3 ml-1" />
-                              {cfg.label}
-                            </Badge>
-                          </span>
+                          <Badge variant={cfg.variant}>
+                            <Icon className="h-3 w-3 ml-1" />
+                            {cfg.label}
+                          </Badge>
                         </TableCell>
                         <TableCell className="max-w-40 truncate">{t.product}</TableCell>
                         <TableCell className="tabular-nums">{formatCurrency(t.total)}</TableCell>
