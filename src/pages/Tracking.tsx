@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { TrackingOrder } from '@/types';
+import type { TrackingOrder, Order } from '@/types';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -18,12 +18,18 @@ const categoryConfig: Record<string, { label: string; variant: 'success' | 'dang
   others: { label: 'أخرى', variant: 'outline', icon: HelpCircle },
 };
 
-export function Tracking({ trackingOrders }: { trackingOrders: TrackingOrder[] }) {
+export function Tracking({ orders = [], trackingOrders }: { orders?: Order[]; trackingOrders: TrackingOrder[] }) {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [repeatOnly, setRepeatOnly] = useState(false);
   const [page, setPage] = useState(0);
   const perPage = 25;
+
+  const customerPhone = useMemo(() => {
+    const map = new Map<string, string>();
+    orders.forEach(o => map.set(o.customer, o.phone));
+    return map;
+  }, [orders]);
 
   const deliveredCounts = useMemo(() => {
     const map = new Map<string, number>();
@@ -162,6 +168,7 @@ export function Tracking({ trackingOrders }: { trackingOrders: TrackingOrder[] }
                   {repeatOnly ? (
                     <>
                       <TableHead>العميل</TableHead>
+                      <TableHead>الهاتف</TableHead>
                       <TableHead>عدد الطلبيات</TableHead>
                       <TableHead>إجمالي الإيراد</TableHead>
                       <TableHead>إجمالي الشحن</TableHead>
@@ -193,6 +200,7 @@ export function Tracking({ trackingOrders }: { trackingOrders: TrackingOrder[] }
                     return (
                       <TableRow key={customer}>
                         <TableCell className="font-medium">{customer}</TableCell>
+                        <TableCell dir="ltr" className="text-xs">{customerPhone.get(customer) || '-'}</TableCell>
                         <TableCell>
                           <Badge variant="success" className="text-sm px-2 py-0.5">{data.count}</Badge>
                         </TableCell>
@@ -239,7 +247,7 @@ export function Tracking({ trackingOrders }: { trackingOrders: TrackingOrder[] }
                 )}
                 {paged.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={repeatOnly ? 6 : 10} className="text-center text-[var(--color-text-muted)] py-8">
+                    <TableCell colSpan={repeatOnly ? 7 : 10} className="text-center text-[var(--color-text-muted)] py-8">
                       لا توجد بيانات
                     </TableCell>
                   </TableRow>
