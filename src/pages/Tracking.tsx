@@ -31,17 +31,24 @@ export function Tracking({ orders = [], trackingOrders }: { orders?: Order[]; tr
     return map;
   }, [orders]);
 
+  function getPhone(t: TrackingOrder): string {
+    return customerPhone.get(t.customer) || t.customer;
+  }
+
   const deliveredCounts = useMemo(() => {
     const map = new Map<string, number>();
     trackingOrders
       .filter(t => t.statusCategory === 'delivered')
-      .forEach(t => map.set(t.customer, (map.get(t.customer) || 0) + 1));
+      .forEach(t => {
+        const key = getPhone(t);
+        map.set(key, (map.get(key) || 0) + 1);
+      });
     return map;
-  }, [trackingOrders]);
+  }, [trackingOrders, customerPhone]);
 
   const repeatDelivered = useMemo(() => {
     const set = new Set<string>();
-    deliveredCounts.forEach((count, customer) => { if (count >= 2) set.add(customer); });
+    deliveredCounts.forEach((count, key) => { if (count >= 2) set.add(key); });
     return set;
   }, [deliveredCounts]);
 
@@ -54,6 +61,7 @@ export function Tracking({ orders = [], trackingOrders }: { orders?: Order[]; tr
       const q = search.toLowerCase();
       list = list.filter(t =>
         t.customer.toLowerCase().includes(q) ||
+        getPhone(t).toLowerCase().includes(q) ||
         t.wilaya.toLowerCase().includes(q) ||
         t.product.toLowerCase().includes(q) ||
         t.orderId.toLowerCase().includes(q)
@@ -63,35 +71,38 @@ export function Tracking({ orders = [], trackingOrders }: { orders?: Order[]; tr
       list = list.filter(t => t.statusCategory === categoryFilter);
     }
     if (repeatOnly) {
-      list = list.filter(t => t.statusCategory === 'delivered' && repeatDelivered.has(t.customer));
+      list = list.filter(t => t.statusCategory === 'delivered' && repeatDelivered.has(getPhone(t)));
     }
     if (repeatOnly) {
-      return list.sort((a, b) => (deliveredCounts.get(b.customer) || 0) - (deliveredCounts.get(a.customer) || 0));
+      return list.sort((a, b) => (deliveredCounts.get(getPhone(b)) || 0) - (deliveredCounts.get(getPhone(a)) || 0));
     }
     return list.sort((a, b) => {
       const aTime = a.date ? a.date.getTime() : 0;
       const bTime = b.date ? b.date.getTime() : 0;
       return bTime - aTime;
     });
-  }, [trackingOrders, search, categoryFilter, repeatOnly, repeatDelivered, deliveredCounts]);
+  }, [trackingOrders, search, categoryFilter, repeatOnly, repeatDelivered, deliveredCounts, customerPhone]);
 
   const customerSummary = useMemo(() => {
-    const map = new Map<string, { count: number; totalRevenue: number; totalDelivery: number; orders: TrackingOrder[] }>();
+    const map = new Map<string, { count: number; totalRevenue: number; totalDelivery: number; customers: Set<string>; orders: TrackingOrder[] }>();
     trackingOrders
-      .filter(t => t.statusCategory === 'delivered' && repeatDelivered.has(t.customer))
+      .filter(t => t.statusCategory === 'delivered')
       .forEach(t => {
-        const entry = map.get(t.customer);
+        const key = getPhone(t);
+        if (!repeatDelivered.has(key)) return;
+        const entry = map.get(key);
         if (entry) {
           entry.count++;
           entry.totalRevenue += t.total;
           entry.totalDelivery += t.delivery;
+          entry.customers.add(t.customer);
           entry.orders.push(t);
         } else {
-          map.set(t.customer, { count: 1, totalRevenue: t.total, totalDelivery: t.delivery, orders: [t] });
+          map.set(key, { count: 1, totalRevenue: t.total, totalDelivery: t.delivery, customers: new Set([t.customer]), orders: [t] });
         }
       });
     return [...map.entries()].sort((a, b) => b[1].count - a[1].count);
-  }, [trackingOrders, repeatDelivered]);
+  }, [trackingOrders, repeatDelivered, customerPhone]);
 
   const paged = repeatOnly
     ? customerSummary.slice(page * perPage, (page + 1) * perPage)
@@ -193,14 +204,15 @@ export function Tracking({ orders = [], trackingOrders }: { orders?: Order[]; tr
               </TableHeader>
               <TableBody>
                 {repeatOnly ? (
-                  (paged as [string, { count: number; totalRevenue: number; totalDelivery: number; orders: TrackingOrder[] }][]).map(([customer, data]) => {
+                  (paged as [string, { count: number; totalRevenue: number; totalDelivery: number; customers: Set<string>; orders: TrackingOrder[] }][]).map(([phone, data]) => {
                     const lastOrder = data.orders.reduce((latest, o) =>
                       o.date && (!latest.date || o.date > latest.date) ? o : latest
                     , data.orders[0]);
+                    const customerNames = [...data.customers].join(' / ');
                     return (
-                      <TableRow key={customer}>
-                        <TableCell className="font-medium">{customer}</TableCell>
-                        <TableCell dir="ltr" className="text-xs">{customerPhone.get(customer) || '-'}</TableCell>
+                      <TableRow key={phone}>
+                        <TableCell className="font-medium max-w-40 truncate" title={customerNames}>{customerNames}</TableCell>
+                        <TableCell dir="ltr" className="text-xs font-mono">{phone}</TableCell>
                         <TableCell>
                           <Badge variant="success" className="text-sm px-2 py-0.5">{data.count}</Badge>
                         </TableCell>
@@ -223,8 +235,8 @@ export function Tracking({ orders = [], trackingOrders }: { orders?: Order[]; tr
                         <TableCell>
                           <div className="flex items-center gap-1.5">
                             {t.customer}
-                            {deliveredCounts.get(t.customer)! >= 2 && (
-                              <Badge variant="success" className="text-[10px] px-1 py-0">{deliveredCounts.get(t.customer)}</Badge>
+                            {deliveredCounts.get(getPhone(t))! >= 2 && (
+                              <Badge variant="success" className="text-[10px] px-1 py-0">{deliveredCounts.get(getPhone(t))}</Badge>
                             )}
                           </div>
                         </TableCell>
