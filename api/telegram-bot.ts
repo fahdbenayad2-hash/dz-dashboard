@@ -4,7 +4,7 @@
  *
  * ENV VARS (Vercel Dashboard → Settings → Environment Variables):
  *   TELEGRAM_BOT_TOKEN   — رمز البوت من @BotFather
- *   TELEGRAM_ALLOWED_ID  — Chat ID تاعك (من @userinfobot)
+ *   TELEGRAM_ALLOWED_ID  — Chat ID ديالك (IDs متعددين مفصولين بفاصلة, مثل "123,456")
  *   SHEET_ID             — ID ديال Google Sheet (موجود أصلاً في sheetsApi.ts)
  */
 
@@ -474,8 +474,9 @@ export default async function handler(req: Request): Promise<Response> {
   const senderId = message.from.id;
   const text = message.text.trim();
 
-  // ── Security: قبول فقط Chat ID المعتمد ──
-  if (ALLOWED_ID && String(senderId) !== ALLOWED_ID) {
+  // ── Security: قبول Chat IDs المعتمدة فقط ──
+  const allowedIds = ALLOWED_ID ? ALLOWED_ID.split(',').map(id => id.trim()) : [];
+  if (allowedIds.length > 0 && !allowedIds.includes(String(senderId))) {
     console.warn(`[BOT] Unauthorized access attempt from: ${senderId}`);
     await sendMessage(chatId, '🚫 غير مصرح لك باستخدام هذا البوت.', BOT_TOKEN);
     return new Response('OK', { status: 200 });
