@@ -349,6 +349,199 @@ async function handleProducts(): Promise<string> {
   return lines.join('\n');
 }
 
+async function handleToday(): Promise<string> {
+  const [orders, tracking] = await Promise.all([fetchOrders(), fetchTracking()]);
+  const today = toLocalDateKey(new Date());
+
+  const todayOrders = orders.filter(o => {
+    const status = normalizeStatus(o.status);
+    if (status !== 'Pending' && status !== 'Waiting') return false;
+    const d = new Date(o.date);
+    return isValidDate(d) && toLocalDateKey(d) === today;
+  });
+
+  const todayDelivered = tracking.filter(t =>
+    t.statusCategory === 'delivered' && isValidDate(t.date) && toLocalDateKey(t.date) === today
+  );
+
+  const deliveredRev = todayDelivered.reduce((s, t) => s + t.total, 0);
+
+  // Products today
+  const prodMap = new Map<string, { orders: number; revenue: number }>();
+  todayDelivered.forEach(t => {
+    if (!t.product) return;
+    const e = prodMap.get(t.product) || { orders: 0, revenue: 0 };
+    e.orders++;
+    e.revenue += t.total;
+    prodMap.set(t.product, e);
+  });
+  const topProducts = [...prodMap.entries()]
+    .sort((a, b) => b[1].revenue - a[1].revenue)
+    .slice(0, 3);
+
+  // Wilaya today
+  const wilMap = new Map<string, { delivered: number; revenue: number }>();
+  todayDelivered.forEach(t => {
+    if (!t.wilaya) return;
+    const e = wilMap.get(t.wilaya) || { delivered: 0, revenue: 0 };
+    e.delivered++;
+    e.revenue += t.total;
+    wilMap.set(t.wilaya, e);
+  });
+  const topWilaya = [...wilMap.entries()].sort((a, b) => b[1].delivered - a[1].delivered).slice(0, 3);
+
+  const lines = [
+    `📅 *تقرير اليوم — ${today}*`,
+    ``,
+    `🆕 طلبات جديدة: *${todayOrders.length}*`,
+    `✅ تم التسليم: *${todayDelivered.length}*`,
+    `💰 إيراد اليوم: *${fmt(deliveredRev)}*`,
+    ``,
+  ];
+
+  if (topProducts.length > 0) {
+    lines.push(`🏆 *أفضل المنتجات اليوم*`);
+    topProducts.forEach(([name, d], i) => {
+      lines.push(`  ${i + 1}. ${name} — ${fmt(d.revenue)} (${d.orders} طلب)`);
+    });
+    lines.push(``);
+  }
+
+  if (topWilaya.length > 0) {
+    lines.push(`📍 *أفضل الولايات اليوم*`);
+    topWilaya.forEach(([name, d], i) => {
+      lines.push(`  ${i + 1}. ${name} — ${d.delivered} تسليم · ${fmt(d.revenue)}`);
+    });
+  }
+
+  return lines.join('\n');
+}
+
+async function handleWeek(): Promise<string> {
+  const [orders, tracking] = await Promise.all([fetchOrders(), fetchTracking()]);
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  const weekKey = `${toLocalDateKey(weekAgo)} → ${toLocalDateKey(new Date())}`;
+
+  const weekOrders = orders.filter(o => {
+    const status = normalizeStatus(o.status);
+    if (status !== 'Pending' && status !== 'Waiting') return false;
+    const d = new Date(o.date);
+    return isValidDate(d) && d >= weekAgo;
+  });
+
+  const weekDelivered = tracking.filter(t =>
+    t.statusCategory === 'delivered' && isValidDate(t.date) && t.date >= weekAgo
+  );
+
+  const weekReturned = tracking.filter(t =>
+    t.statusCategory === 'returned' && isValidDate(t.date) && t.date >= weekAgo
+  );
+
+  const deliveredRev = weekDelivered.reduce((s, t) => s + t.total, 0);
+  const settled = weekDelivered.length + weekReturned.length;
+  const deliveryRate = settled > 0 ? (weekDelivered.length / settled) * 100 : 0;
+
+  // Products week
+  const prodMap = new Map<string, { orders: number; revenue: number }>();
+  weekDelivered.forEach(t => {
+    if (!t.product) return;
+    const e = prodMap.get(t.product) || { orders: 0, revenue: 0 };
+    e.orders++;
+    e.revenue += t.total;
+    prodMap.set(t.product, e);
+  });
+  const topProducts = [...prodMap.entries()]
+    .sort((a, b) => b[1].revenue - a[1].revenue)
+    .slice(0, 3);
+
+  // Wilaya week
+  const wilMap = new Map<string, { delivered: number; revenue: number }>();
+  weekDelivered.forEach(t => {
+    if (!t.wilaya) return;
+    const e = wilMap.get(t.wilaya) || { delivered: 0, revenue: 0 };
+    e.delivered++;
+    e.revenue += t.total;
+    wilMap.set(t.wilaya, e);
+  });
+  const topWilaya = [...wilMap.entries()].sort((a, b) => b[1].delivered - a[1].delivered).slice(0, 3);
+
+  const lines = [
+    `📆 *تقرير الأسبوع — ${weekKey}*`,
+    ``,
+    `🆕 طلبات جديدة: *${weekOrders.length}*`,
+    `✅ تم التسليم: *${weekDelivered.length}*`,
+    `❌ مرجع: *${weekReturned.length}*`,
+    `📊 معدل التسليم: *${pct(deliveryRate)}*`,
+    `💰 إيراد الأسبوع: *${fmt(deliveredRev)}*`,
+    ``,
+  ];
+
+  if (topProducts.length > 0) {
+    lines.push(`🏆 *أفضل المنتجات*`);
+    topProducts.forEach(([name, d], i) => {
+      lines.push(`  ${i + 1}. ${name} — ${fmt(d.revenue)} (${d.orders} طلب)`);
+    });
+    lines.push(``);
+  }
+
+  if (topWilaya.length > 0) {
+    lines.push(`📍 *أفضل الولايات*`);
+    topWilaya.forEach(([name, d], i) => {
+      lines.push(`  ${i + 1}. ${name} — ${d.delivered} تسليم · ${fmt(d.revenue)}`);
+    });
+  }
+
+  return lines.join('\n');
+}
+
+async function handleBestWilaya(): Promise<string> {
+  const tracking = await fetchTracking();
+  const today = toLocalDateKey(new Date());
+  const todayDelivered = tracking.filter(t =>
+    t.statusCategory === 'delivered' && isValidDate(t.date) && toLocalDateKey(t.date) === today
+  );
+
+  const wilMap = new Map<string, { delivered: number; revenue: number }>();
+  todayDelivered.forEach(t => {
+    if (!t.wilaya) return;
+    const e = wilMap.get(t.wilaya) || { delivered: 0, revenue: 0 };
+    e.delivered++;
+    e.revenue += t.total;
+    wilMap.set(t.wilaya, e);
+  });
+
+  const top = [...wilMap.entries()]
+    .map(([name, d]) => ({ name, ...d }))
+    .sort((a, b) => b.delivered - a.delivered || b.revenue - a.revenue);
+
+  if (top.length === 0) {
+    return `📍 لا يوجد تسليمات اليوم.`;
+  }
+
+  const totalDelivered = top.reduce((s, w) => s + w.delivered, 0);
+  const totalRevenue = top.reduce((s, w) => s + w.revenue, 0);
+
+  const lines = [
+    `🏆 *أفضل ولاية اليوم — ${today}*`,
+    ``,
+    `👑 *${top[0].name}* — ${top[0].delivered} تسليم · ${fmt(top[0].revenue)}`,
+    ``,
+    `*التصنيف الكامل:*`,
+  ];
+
+  top.slice(0, 10).forEach((w, i) => {
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+    const pctShare = totalDelivered > 0 ? ((w.delivered / totalDelivered) * 100).toFixed(1) : '0';
+    lines.push(`${medal} *${w.name}* — ${w.delivered} تسليم (${pctShare}%) · ${fmt(w.revenue)}`);
+  });
+
+  lines.push(``);
+  lines.push(`📊 الإجمالي: ${totalDelivered} تسليم · ${fmt(totalRevenue)}`);
+
+  return lines.join('\n');
+}
+
 async function handleRisk(): Promise<string> {
   const tracking = await fetchTracking();
   const metrics = getSettledMetrics(tracking);
@@ -411,7 +604,10 @@ function handleHelp(): string {
     ``,
     `الأوامر المتاحة:`,
     ``,
-    `/stats — تقرير اليوم + KPIs رئيسية`,
+    `/stats — تقرير عام + KPIs`,
+    `/today — تقرير اليوم (منتجات + ولايات)`,
+    `/week — تقرير الأسبوع`,
+    `/bestwilaya — أفضل ولاية اليوم`,
     `/revenue — إيراد آخر 6 أشهر`,
     `/agents — أداء الوكلاء`,
     `/wilaya — أفضل 10 ولايات`,
@@ -510,6 +706,15 @@ export default async function handler(req: Request): Promise<Response> {
         break;
       case '/products':
         response = await handleProducts();
+        break;
+      case '/today':
+        response = await handleToday();
+        break;
+      case '/week':
+        response = await handleWeek();
+        break;
+      case '/bestwilaya':
+        response = await handleBestWilaya();
         break;
       case '/risk':
         response = await handleRisk();
