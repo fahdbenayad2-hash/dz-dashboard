@@ -165,6 +165,31 @@ function pct(n: number): string {
   return n.toFixed(1) + '%';
 }
 
+function parseDateArgs(args: string): { from: Date; to: Date } | null {
+  const parts = args.trim().split(/\s+/).filter(Boolean);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (parts.length === 0) return null;
+
+  const dates = parts.map(p => {
+    const d = new Date(p + 'T00:00:00');
+    return isValidDate(d) ? d : null;
+  }).filter(Boolean) as Date[];
+
+  if (dates.length === 0) return null;
+
+  const from = dates[0];
+  const to = dates.length > 1 ? dates[1] : dates[0];
+  to.setHours(23, 59, 59, 999);
+  return { from, to };
+}
+
+function inRange(date: Date | null, from: Date, to: Date): boolean {
+  if (!date || !isValidDate(date)) return false;
+  return date >= from && date <= to;
+}
+
 // ─── Business logic functions ─────────────────────────────────────────────────
 
 function getSettledMetrics(tracking: TrackingOrder[]) {
@@ -349,26 +374,31 @@ async function handleProducts(): Promise<string> {
   return lines.join('\n');
 }
 
-async function handleToday(): Promise<string> {
+async function handleToday(args: string): Promise<string> {
   const [orders, tracking] = await Promise.all([fetchOrders(), fetchTracking()]);
-  const today = toLocalDateKey(new Date());
+  const range = parseDateArgs(args);
+  const from = range?.from ?? (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+  const to = range?.to ?? (() => { const d = new Date(); d.setHours(23, 59, 59, 999); return d; })();
 
-  const todayOrders = orders.filter(o => {
+  const periodLabel = range
+    ? `${toLocalDateKey(from)} → ${toLocalDateKey(to)}`
+    : toLocalDateKey(new Date());
+
+  const filteredOrders = orders.filter(o => {
     const status = normalizeStatus(o.status);
     if (status !== 'Pending' && status !== 'Waiting') return false;
-    const d = new Date(o.date);
-    return isValidDate(d) && toLocalDateKey(d) === today;
+    return inRange(new Date(o.date), from, to);
   });
 
-  const todayDelivered = tracking.filter(t =>
-    t.statusCategory === 'delivered' && isValidDate(t.date) && toLocalDateKey(t.date) === today
+  const filteredDelivered = tracking.filter(t =>
+    t.statusCategory === 'delivered' && inRange(t.date, from, to)
   );
 
-  const deliveredRev = todayDelivered.reduce((s, t) => s + t.total, 0);
+  const deliveredRev = filteredDelivered.reduce((s, t) => s + t.total, 0);
 
-  // Products today
+  // Products
   const prodMap = new Map<string, { orders: number; revenue: number }>();
-  todayDelivered.forEach(t => {
+  filteredDelivered.forEach(t => {
     if (!t.product) return;
     const e = prodMap.get(t.product) || { orders: 0, revenue: 0 };
     e.orders++;
@@ -379,9 +409,9 @@ async function handleToday(): Promise<string> {
     .sort((a, b) => b[1].revenue - a[1].revenue)
     .slice(0, 3);
 
-  // Wilaya today
+  // Wilaya
   const wilMap = new Map<string, { delivered: number; revenue: number }>();
-  todayDelivered.forEach(t => {
+  filteredDelivered.forEach(t => {
     if (!t.wilaya) return;
     const e = wilMap.get(t.wilaya) || { delivered: 0, revenue: 0 };
     e.delivered++;
@@ -391,89 +421,11 @@ async function handleToday(): Promise<string> {
   const topWilaya = [...wilMap.entries()].sort((a, b) => b[1].delivered - a[1].delivered).slice(0, 3);
 
   const lines = [
-    `📅 *تقرير اليوم — ${today}*`,
+    `📅 *تقرير — ${periodLabel}*`,
     ``,
-    `🆕 طلبات جديدة: *${todayOrders.length}*`,
-    `✅ تم التسليم: *${todayDelivered.length}*`,
-    `💰 إيراد اليوم: *${fmt(deliveredRev)}*`,
-    ``,
-  ];
-
-  if (topProducts.length > 0) {
-    lines.push(`🏆 *أفضل المنتجات اليوم*`);
-    topProducts.forEach(([name, d], i) => {
-      lines.push(`  ${i + 1}. ${name} — ${fmt(d.revenue)} (${d.orders} طلب)`);
-    });
-    lines.push(``);
-  }
-
-  if (topWilaya.length > 0) {
-    lines.push(`📍 *أفضل الولايات اليوم*`);
-    topWilaya.forEach(([name, d], i) => {
-      lines.push(`  ${i + 1}. ${name} — ${d.delivered} تسليم · ${fmt(d.revenue)}`);
-    });
-  }
-
-  return lines.join('\n');
-}
-
-async function handleWeek(): Promise<string> {
-  const [orders, tracking] = await Promise.all([fetchOrders(), fetchTracking()]);
-  const weekAgo = new Date();
-  weekAgo.setDate(weekAgo.getDate() - 7);
-  const weekKey = `${toLocalDateKey(weekAgo)} → ${toLocalDateKey(new Date())}`;
-
-  const weekOrders = orders.filter(o => {
-    const status = normalizeStatus(o.status);
-    if (status !== 'Pending' && status !== 'Waiting') return false;
-    const d = new Date(o.date);
-    return isValidDate(d) && d >= weekAgo;
-  });
-
-  const weekDelivered = tracking.filter(t =>
-    t.statusCategory === 'delivered' && isValidDate(t.date) && t.date >= weekAgo
-  );
-
-  const weekReturned = tracking.filter(t =>
-    t.statusCategory === 'returned' && isValidDate(t.date) && t.date >= weekAgo
-  );
-
-  const deliveredRev = weekDelivered.reduce((s, t) => s + t.total, 0);
-  const settled = weekDelivered.length + weekReturned.length;
-  const deliveryRate = settled > 0 ? (weekDelivered.length / settled) * 100 : 0;
-
-  // Products week
-  const prodMap = new Map<string, { orders: number; revenue: number }>();
-  weekDelivered.forEach(t => {
-    if (!t.product) return;
-    const e = prodMap.get(t.product) || { orders: 0, revenue: 0 };
-    e.orders++;
-    e.revenue += t.total;
-    prodMap.set(t.product, e);
-  });
-  const topProducts = [...prodMap.entries()]
-    .sort((a, b) => b[1].revenue - a[1].revenue)
-    .slice(0, 3);
-
-  // Wilaya week
-  const wilMap = new Map<string, { delivered: number; revenue: number }>();
-  weekDelivered.forEach(t => {
-    if (!t.wilaya) return;
-    const e = wilMap.get(t.wilaya) || { delivered: 0, revenue: 0 };
-    e.delivered++;
-    e.revenue += t.total;
-    wilMap.set(t.wilaya, e);
-  });
-  const topWilaya = [...wilMap.entries()].sort((a, b) => b[1].delivered - a[1].delivered).slice(0, 3);
-
-  const lines = [
-    `📆 *تقرير الأسبوع — ${weekKey}*`,
-    ``,
-    `🆕 طلبات جديدة: *${weekOrders.length}*`,
-    `✅ تم التسليم: *${weekDelivered.length}*`,
-    `❌ مرجع: *${weekReturned.length}*`,
-    `📊 معدل التسليم: *${pct(deliveryRate)}*`,
-    `💰 إيراد الأسبوع: *${fmt(deliveredRev)}*`,
+    `🆕 طلبات جديدة: *${filteredOrders.length}*`,
+    `✅ تم التسليم: *${filteredDelivered.length}*`,
+    `💰 الإيراد: *${fmt(deliveredRev)}*`,
     ``,
   ];
 
@@ -495,15 +447,103 @@ async function handleWeek(): Promise<string> {
   return lines.join('\n');
 }
 
-async function handleBestWilaya(): Promise<string> {
+async function handleWeek(args: string): Promise<string> {
+  const [orders, tracking] = await Promise.all([fetchOrders(), fetchTracking()]);
+  const range = parseDateArgs(args);
+  const to = range?.to ?? (() => { const d = new Date(); d.setHours(23, 59, 59, 999); return d; })();
+  const from = range?.from ?? (() => { const d = new Date(); d.setDate(d.getDate() - 7); d.setHours(0, 0, 0, 0); return d; })();
+
+  const periodLabel = range
+    ? `${toLocalDateKey(from)} → ${toLocalDateKey(to)}`
+    : `${toLocalDateKey(from)} → ${toLocalDateKey(to)}`;
+
+  const filteredOrders = orders.filter(o => {
+    const status = normalizeStatus(o.status);
+    if (status !== 'Pending' && status !== 'Waiting') return false;
+    return inRange(new Date(o.date), from, to);
+  });
+
+  const filteredDelivered = tracking.filter(t =>
+    t.statusCategory === 'delivered' && inRange(t.date, from, to)
+  );
+
+  const filteredReturned = tracking.filter(t =>
+    t.statusCategory === 'returned' && inRange(t.date, from, to)
+  );
+
+  const deliveredRev = filteredDelivered.reduce((s, t) => s + t.total, 0);
+  const settled = filteredDelivered.length + filteredReturned.length;
+  const deliveryRate = settled > 0 ? (filteredDelivered.length / settled) * 100 : 0;
+
+  // Products
+  const prodMap = new Map<string, { orders: number; revenue: number }>();
+  filteredDelivered.forEach(t => {
+    if (!t.product) return;
+    const e = prodMap.get(t.product) || { orders: 0, revenue: 0 };
+    e.orders++;
+    e.revenue += t.total;
+    prodMap.set(t.product, e);
+  });
+  const topProducts = [...prodMap.entries()]
+    .sort((a, b) => b[1].revenue - a[1].revenue)
+    .slice(0, 3);
+
+  // Wilaya
+  const wilMap = new Map<string, { delivered: number; revenue: number }>();
+  filteredDelivered.forEach(t => {
+    if (!t.wilaya) return;
+    const e = wilMap.get(t.wilaya) || { delivered: 0, revenue: 0 };
+    e.delivered++;
+    e.revenue += t.total;
+    wilMap.set(t.wilaya, e);
+  });
+  const topWilaya = [...wilMap.entries()].sort((a, b) => b[1].delivered - a[1].delivered).slice(0, 3);
+
+  const lines = [
+    `📆 *تقرير الفترة — ${periodLabel}*`,
+    ``,
+    `🆕 طلبات جديدة: *${filteredOrders.length}*`,
+    `✅ تم التسليم: *${filteredDelivered.length}*`,
+    `❌ مرجع: *${filteredReturned.length}*`,
+    `📊 معدل التسليم: *${pct(deliveryRate)}*`,
+    `💰 الإيراد: *${fmt(deliveredRev)}*`,
+    ``,
+  ];
+
+  if (topProducts.length > 0) {
+    lines.push(`🏆 *أفضل المنتجات*`);
+    topProducts.forEach(([name, d], i) => {
+      lines.push(`  ${i + 1}. ${name} — ${fmt(d.revenue)} (${d.orders} طلب)`);
+    });
+    lines.push(``);
+  }
+
+  if (topWilaya.length > 0) {
+    lines.push(`📍 *أفضل الولايات*`);
+    topWilaya.forEach(([name, d], i) => {
+      lines.push(`  ${i + 1}. ${name} — ${d.delivered} تسليم · ${fmt(d.revenue)}`);
+    });
+  }
+
+  return lines.join('\n');
+}
+
+async function handleBestWilaya(args: string): Promise<string> {
   const tracking = await fetchTracking();
-  const today = toLocalDateKey(new Date());
-  const todayDelivered = tracking.filter(t =>
-    t.statusCategory === 'delivered' && isValidDate(t.date) && toLocalDateKey(t.date) === today
+  const range = parseDateArgs(args);
+  const from = range?.from ?? (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+  const to = range?.to ?? (() => { const d = new Date(); d.setHours(23, 59, 59, 999); return d; })();
+
+  const periodLabel = range
+    ? `${toLocalDateKey(from)} → ${toLocalDateKey(to)}`
+    : toLocalDateKey(new Date());
+
+  const filteredDelivered = tracking.filter(t =>
+    t.statusCategory === 'delivered' && inRange(t.date, from, to)
   );
 
   const wilMap = new Map<string, { delivered: number; revenue: number }>();
-  todayDelivered.forEach(t => {
+  filteredDelivered.forEach(t => {
     if (!t.wilaya) return;
     const e = wilMap.get(t.wilaya) || { delivered: 0, revenue: 0 };
     e.delivered++;
@@ -516,14 +556,14 @@ async function handleBestWilaya(): Promise<string> {
     .sort((a, b) => b.delivered - a.delivered || b.revenue - a.revenue);
 
   if (top.length === 0) {
-    return `📍 لا يوجد تسليمات اليوم.`;
+    return `📍 لا يوجد تسليمات في هذه الفترة.`;
   }
 
   const totalDelivered = top.reduce((s, w) => s + w.delivered, 0);
   const totalRevenue = top.reduce((s, w) => s + w.revenue, 0);
 
   const lines = [
-    `🏆 *أفضل ولاية اليوم — ${today}*`,
+    `🏆 *أفضل ولاية — ${periodLabel}*`,
     ``,
     `👑 *${top[0].name}* — ${top[0].delivered} تسليم · ${fmt(top[0].revenue)}`,
     ``,
@@ -605,9 +645,9 @@ function handleHelp(): string {
     `الأوامر المتاحة:`,
     ``,
     `/stats — تقرير عام + KPIs`,
-    `/today — تقرير اليوم (منتجات + ولايات)`,
-    `/week — تقرير الأسبوع`,
-    `/bestwilaya — أفضل ولاية اليوم`,
+    `/today [تاريخ] — تقرير يوم/فترة (مثال: /today 2026-06-01 2026-06-13)`,
+    `/week [تاريخ] — تقرير أسبوع/فترة`,
+    `/bestwilaya [تاريخ] — أفضل ولاية في الفترة`,
     `/revenue — إيراد آخر 6 أشهر`,
     `/agents — أداء الوكلاء`,
     `/wilaya — أفضل 10 ولايات`,
@@ -679,7 +719,9 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   // ── Route الأوامر ──
-  const command = text.split(' ')[0].toLowerCase();
+  const parts = text.split(/\s+/);
+  const command = parts[0].toLowerCase();
+  const args = parts.slice(1).join(' ');
 
   // أرسل "يكتب..." فوراً
   await sendTyping(chatId, BOT_TOKEN);
@@ -708,13 +750,13 @@ export default async function handler(req: Request): Promise<Response> {
         response = await handleProducts();
         break;
       case '/today':
-        response = await handleToday();
+        response = await handleToday(args);
         break;
       case '/week':
-        response = await handleWeek();
+        response = await handleWeek(args);
         break;
       case '/bestwilaya':
-        response = await handleBestWilaya();
+        response = await handleBestWilaya(args);
         break;
       case '/risk':
         response = await handleRisk();
