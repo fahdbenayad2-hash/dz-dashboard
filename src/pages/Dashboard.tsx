@@ -23,8 +23,10 @@ function toInputDate(d: Date): string {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
-function useDashboardData(orders: Order[], tracking: TrackingOrder[], dateFrom: Date, dateTo: Date) {
+function useDashboardData(orders: Order[], tracking: TrackingOrder[], fromStr: string, toStr: string) {
   return useMemo(() => {
+    const dateFrom = new Date(fromStr + 'T00:00:00');
+    const dateTo = new Date(toStr + 'T23:59:59');
     const periodOrders = getPeriodOrders(orders, dateFrom, dateTo);
     const periodDelivered = getPeriodDelivered(tracking, dateFrom, dateTo);
     const periodRevenue = getPeriodRevenue(tracking, dateFrom, dateTo);
@@ -40,14 +42,29 @@ function useDashboardData(orders: Order[], tracking: TrackingOrder[], dateFrom: 
     const revenueTrend = getDailyRevenueTracking(periodTracking, daysInPeriod, dateTo);
     const settledMetrics = getSettledMetrics(periodTracking);
 
+    // Best product in period
+    const prodMap = new Map<string, { orders: number; revenue: number }>();
+    periodTracking
+      .filter(t => t.statusCategory === 'delivered' && t.product)
+      .forEach(t => {
+        const e = prodMap.get(t.product!) || { orders: 0, revenue: 0 };
+        e.orders++;
+        e.revenue += t.total;
+        prodMap.set(t.product!, e);
+      });
+    const topProduct = [...prodMap.entries()]
+      .sort((a, b) => b[1].orders - a[1].orders)
+      .slice(0, 1)
+      .map(([name, d]) => ({ name, ...d }))[0] || null;
+
     console.log('[DZ-CHANGE] tracking-metrics', trackingMetrics);
-    console.log('[DZ-CHANGE] period-orders', periodOrders);
 
     return {
       ...trackingMetrics,
       deliveredToday: periodDelivered,
       ...periodOrders,
       periodRevenue,
+      topProduct,
       trackingStatus,
       agentData, wilayaData, productData,
       settledMetrics,
@@ -59,20 +76,15 @@ function useDashboardData(orders: Order[], tracking: TrackingOrder[], dateFrom: 
       dailyOrders: revenueTrend.map(d => d.orders),
       pendingOrders: metrics.pendingOrders,
     };
-  }, [orders, tracking]);
+  }, [orders, tracking, fromStr, toStr]);
 }
 
 export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackingOrders: TrackingOrder[] }) {
   console.log('[DZ-DASHBOARD] orders:', orders.length, 'trackingOrders:', trackingOrders.length);
   console.log('[DZ-DASHBOARD] first trackingOrder:', trackingOrders[0]);
-  const today = new Date();
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date(); d.setHours(0, 0, 0, 0); return toInputDate(d);
-  });
-  const [dateTo, setDateTo] = useState(() => toInputDate(today));
-  const fromDate = new Date(dateFrom + 'T00:00:00');
-  const toDate = new Date(dateTo + 'T23:59:59');
-  const data = useDashboardData(orders, trackingOrders, fromDate, toDate);
+  const [dateFrom, setDateFrom] = useState(() => toInputDate(new Date()));
+  const [dateTo, setDateTo] = useState(() => toInputDate(new Date()));
+  const data = useDashboardData(orders, trackingOrders, dateFrom, dateTo);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(0);
@@ -121,6 +133,33 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
           setDateFrom(toInputDate(monthAgo)); setDateTo(toInputDate(d));
         }}>آخر 30 يوم</Button>
       </div>
+
+      {/* Top Product in Period */}
+      {data.topProduct && (
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🏆</span>
+                <div>
+                  <p className="text-sm text-[var(--color-text-muted)]">المنتج الأكثر مبيعاً في الفترة</p>
+                  <p className="text-lg font-bold">{data.topProduct.name}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-6">
+                <div className="text-center">
+                  <p className="text-sm text-[var(--color-text-muted)]">عدد الطلبات</p>
+                  <p className="text-xl font-bold">{formatNumber(data.topProduct.orders)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-[var(--color-text-muted)]">الإيراد</p>
+                  <p className="text-xl font-bold">{formatCurrency(data.topProduct.revenue)}</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
