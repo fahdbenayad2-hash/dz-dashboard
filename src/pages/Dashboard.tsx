@@ -14,32 +14,40 @@ import { Select } from '@/components/ui/select';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import {
   getOrderMetrics, normalizeStatus,
-  getTrackingMetrics, getTrackingStatusDistribution, getAgentCountsTracking, getWilayaCountsTracking, getProductCountsTracking, getMonthlyRevenueTracking, getDailyRevenueTracking, getTodayOrders,
-  getTodayDelivered,
+  getTrackingMetrics, getTrackingStatusDistribution, getAgentCountsTracking, getWilayaCountsTracking, getProductCountsTracking, getMonthlyRevenueTracking, getDailyRevenueTracking,
+  getPeriodOrders, getPeriodDelivered, getPeriodRevenue, filterByPeriod, getDateISOStringLocal, isValidDate,
   getSettledMetrics,
 } from '@/lib/dashboardMetrics';
 
-function useDashboardData(orders: Order[], tracking: TrackingOrder[]) {
+function toInputDate(d: Date): string {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function useDashboardData(orders: Order[], tracking: TrackingOrder[], dateFrom: Date, dateTo: Date) {
   return useMemo(() => {
+    const periodOrders = getPeriodOrders(orders, dateFrom, dateTo);
+    const periodDelivered = getPeriodDelivered(tracking, dateFrom, dateTo);
+    const periodRevenue = getPeriodRevenue(tracking, dateFrom, dateTo);
+    const periodTracking = filterByPeriod(tracking, dateFrom, dateTo);
     const metrics = getOrderMetrics(orders);
-    const trackingMetrics = getTrackingMetrics(tracking);
-    const trackingStatus = getTrackingStatusDistribution(tracking);
-    const today = getTodayOrders(orders);
-    const agentData = getAgentCountsTracking(tracking);
-    const wilayaData = getWilayaCountsTracking(tracking);
-    const productData = getProductCountsTracking(tracking);
+    const trackingMetrics = getTrackingMetrics(periodTracking);
+    const trackingStatus = getTrackingStatusDistribution(periodTracking);
+    const agentData = getAgentCountsTracking(periodTracking);
+    const wilayaData = getWilayaCountsTracking(periodTracking);
+    const productData = getProductCountsTracking(periodTracking);
     const monthlyData = getMonthlyRevenueTracking(tracking);
-    const revenueTrend = getDailyRevenueTracking(tracking, 14);
-    const settledMetrics = getSettledMetrics(tracking);
-    const deliveredToday = getTodayDelivered(tracking);
+    const daysInPeriod = Math.max(Math.round((dateTo.getTime() - dateFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1, 1);
+    const revenueTrend = getDailyRevenueTracking(periodTracking, daysInPeriod, dateTo);
+    const settledMetrics = getSettledMetrics(periodTracking);
 
     console.log('[DZ-CHANGE] tracking-metrics', trackingMetrics);
-    console.log('[DZ-CHANGE] today-orders', today);
+    console.log('[DZ-CHANGE] period-orders', periodOrders);
 
     return {
       ...trackingMetrics,
-      deliveredToday,
-      ...today,
+      deliveredToday: periodDelivered,
+      ...periodOrders,
+      periodRevenue,
       trackingStatus,
       agentData, wilayaData, productData,
       settledMetrics,
@@ -57,7 +65,14 @@ function useDashboardData(orders: Order[], tracking: TrackingOrder[]) {
 export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackingOrders: TrackingOrder[] }) {
   console.log('[DZ-DASHBOARD] orders:', orders.length, 'trackingOrders:', trackingOrders.length);
   console.log('[DZ-DASHBOARD] first trackingOrder:', trackingOrders[0]);
-  const data = useDashboardData(orders, trackingOrders);
+  const today = new Date();
+  const [dateFrom, setDateFrom] = useState(() => {
+    const d = new Date(); d.setHours(0, 0, 0, 0); return toInputDate(d);
+  });
+  const [dateTo, setDateTo] = useState(() => toInputDate(today));
+  const fromDate = new Date(dateFrom + 'T00:00:00');
+  const toDate = new Date(dateTo + 'T23:59:59');
+  const data = useDashboardData(orders, trackingOrders, fromDate, toDate);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(0);
@@ -84,6 +99,29 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
 
   return (
     <div className="space-y-6">
+      {/* Date Range Filter */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-[var(--color-text-muted)]">من</label>
+          <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-44" />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-[var(--color-text-muted)]">إلى</label>
+          <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-44" />
+        </div>
+        <Button variant="outline" size="sm" onClick={() => {
+          const d = new Date(); setDateFrom(toInputDate(d)); setDateTo(toInputDate(d));
+        }}>اليوم</Button>
+        <Button variant="outline" size="sm" onClick={() => {
+          const d = new Date(); const weekAgo = new Date(); weekAgo.setDate(d.getDate() - 7);
+          setDateFrom(toInputDate(weekAgo)); setDateTo(toInputDate(d));
+        }}>آخر 7 أيام</Button>
+        <Button variant="outline" size="sm" onClick={() => {
+          const d = new Date(); const monthAgo = new Date(); monthAgo.setDate(d.getDate() - 30);
+          setDateFrom(toInputDate(monthAgo)); setDateTo(toInputDate(d));
+        }}>آخر 30 يوم</Button>
+      </div>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         <KPICard icon={<PackageCheck className="h-5 w-5" />} label="إجمالي الطلبات (مؤكدة)" value={formatNumber(data.total)} change={0} />
@@ -94,9 +132,9 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
         <KPICard icon={<PiggyBank className="h-5 w-5" />} label="صافي بعد الشحن" value={formatCurrency(data.netRevenue)} change={1.5} />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        <KPICard icon={<AlarmClock className="h-5 w-5" />} label="طلبات اليوم (جديدة)" value={formatNumber(data.ordersToday)} color="#378ADD" />
-        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم توصيله اليوم" value={formatNumber(data.deliveredToday)} color="#1D9E75" />
-        <KPICard icon={<DollarSign className="h-5 w-5" />} label="مداخيل اليوم" value={formatCurrency(data.revenueToday)} color="#1D9E75" />
+        <KPICard icon={<AlarmClock className="h-5 w-5" />} label="طلبات جديدة (الفترة)" value={formatNumber(data.ordersToday)} color="#378ADD" />
+        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم التوصيل (الفترة)" value={formatNumber(data.deliveredToday)} color="#1D9E75" />
+        <KPICard icon={<DollarSign className="h-5 w-5" />} label="إيراد (الفترة)" value={formatCurrency(data.periodRevenue)} color="#1D9E75" />
         <KPICard icon={<Package className="h-5 w-5" />} label="قيد التوصيل" value={formatNumber(data.inTransit + data.inDelivery)} color="#EF9F27" />
         <KPICard icon={<CheckCircle className="h-5 w-5" />} label="معدل التوصيل (محسوم)" value={data.settledMetrics.deliveryRate.toFixed(1) + '%'} change={0} changeLabel={`من ${formatNumber(data.settledMetrics.settledCount)} طلب`} color="#1D9E75" />
         <KPICard icon={<XCircle className="h-5 w-5" />} label="معدل الإرجاع" value={data.returnRate.toFixed(1) + '%'} color="#E24B4A" />

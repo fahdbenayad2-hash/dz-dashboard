@@ -480,25 +480,33 @@ export function getAgentDailyVsMonthlyAvg(tracking: TrackingOrder[], agentName: 
   return { dailyAvgOrders, todayCount, performanceVsAvg, daysElapsed };
 }
 
-export function getTodayOrders(orders: Order[]) {
-  const today = getDateISOStringLocal(new Date());
-  const todayOrders = orders.filter(o => {
+export function getPeriodOrders(orders: Order[], from: Date, to: Date) {
+  const filtered = orders.filter(o => {
     const status = normalizeStatus(o.status);
     if (status !== 'Pending' && status !== 'Waiting') return false;
     const d = parseOrderDate(o.date);
-    return d && getDateISOStringLocal(d) === today;
+    return d && d >= from && d <= to;
   });
   return {
-    ordersToday: todayOrders.length,
-    revenueToday: todayOrders.reduce((s, o) => s + o.total, 0),
+    ordersToday: filtered.length,
+    revenueToday: filtered.reduce((s, o) => s + o.total, 0),
   };
 }
 
-export function getTodayDelivered(tracking: TrackingOrder[]) {
-  const today = getDateISOStringLocal(new Date());
+export function getPeriodDelivered(tracking: TrackingOrder[], from: Date, to: Date) {
   return tracking.filter(t =>
     t.statusCategory === 'delivered' &&
     isValidDate(t.date) &&
-    getDateISOStringLocal(t.date) === today
+    t.date >= from && t.date <= to
   ).length;
+}
+
+export function getPeriodRevenue(tracking: TrackingOrder[], from: Date, to: Date) {
+  return tracking
+    .filter(t => t.statusCategory === 'delivered' && isValidDate(t.date) && t.date >= from && t.date <= to)
+    .reduce((s, t) => s + t.total, 0);
+}
+
+export function filterByPeriod<T extends { date: Date | null }>(items: T[], from: Date, to: Date): T[] {
+  return items.filter(t => isValidDate(t.date) && t.date! >= from && t.date! <= to);
 }
