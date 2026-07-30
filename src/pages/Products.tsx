@@ -9,13 +9,19 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { RiskMeter } from '@/components/shared/RiskMeter';
 import { usePricing } from '@/hooks/usePricing';
 import { formatCurrency, formatPercent } from '@/lib/utils';
-import { Copy, RotateCcw, Package, TrendingDown, TrendingUp } from 'lucide-react';
+import { Copy, RotateCcw, Package, TrendingDown, TrendingUp, Trophy } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { isValidDate } from '@/lib/dashboardMetrics';
 
-function useProductData(tracking: TrackingOrder[]) {
+function toInputDate(d: Date): string {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function useProductData(tracking: TrackingOrder[], from: Date, to: Date) {
   return useMemo(() => {
+    const periodTracking = tracking.filter(t => isValidDate(t.date) && t.date! >= from && t.date! <= to);
     const map = new Map<string, { orders: number; delivered: number; returned: number; revenue: number }>();
-    tracking.forEach(t => {
+    periodTracking.forEach(t => {
       if (!t.product) return;
       const existing = map.get(t.product) || { orders: 0, delivered: 0, returned: 0, revenue: 0 };
       existing.orders++;
@@ -24,18 +30,28 @@ function useProductData(tracking: TrackingOrder[]) {
       if (t.statusCategory === 'returned') existing.returned++;
       map.set(t.product, existing);
     });
-    return [...map.entries()]
+    const products = [...map.entries()]
       .map(([name, d]) => {
         const deliveryRate = d.orders > 0 ? (d.delivered / d.orders) * 100 : 0;
         return { name, ...d, deliveryRate, avgValue: d.orders > 0 ? d.revenue / d.orders : 0 };
       })
       .sort((a, b) => b.orders - a.orders);
-  }, [tracking]);
+    const top = products.length > 0 ? products[0] : null;
+    const totalOrders = products.reduce((s, p) => s + p.orders, 0);
+    const totalRevenue = products.reduce((s, p) => s + p.revenue, 0);
+    return { products, top, totalOrders, totalRevenue };
+  }, [tracking, from, to]);
 }
 
 export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }) {
   const [activeTab, setActiveTab] = useState<'sold' | 'pricing'>('sold');
-  const products = useProductData(trackingOrders);
+  const [dateFrom, setDateFrom] = useState(() => {
+    const d = new Date(); d.setDate(1); return toInputDate(d);
+  });
+  const [dateTo, setDateTo] = useState(() => toInputDate(new Date()));
+  const from = new Date(dateFrom + 'T00:00:00');
+  const to = new Date(dateTo + 'T23:59:59');
+  const { products, top, totalOrders, totalRevenue } = useProductData(trackingOrders, from, to);
   const [search, setSearch] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
 
@@ -85,18 +101,78 @@ export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }
       </div>
 
       {activeTab === 'sold' && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <CardTitle>المنتجات المُباعة ({filtered.length})</CardTitle>
-              <Input
-                placeholder="بحث عن منتج..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="w-56"
-              />
+        <>
+          {/* Top Product + Period Filter */}
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-[var(--color-text-muted)]">من</label>
+                <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-40" />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-[var(--color-text-muted)]">إلى</label>
+                <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-40" />
+              </div>
+              <Button variant="outline" size="sm" onClick={() => {
+                const d = new Date(); d.setDate(1); setDateFrom(toInputDate(d)); setDateTo(toInputDate(new Date()));
+              }}>هذا الشهر</Button>
+              <Button variant="outline" size="sm" onClick={() => {
+                const d = new Date(); const w = new Date(); w.setDate(d.getDate() - 7);
+                setDateFrom(toInputDate(w)); setDateTo(toInputDate(d));
+              }}>آخر 7 أيام</Button>
             </div>
-          </CardHeader>
+          </div>
+
+          {top && (
+            <Card>
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-3">
+                    <Trophy className="h-8 w-8 text-[var(--color-warning)]" />
+                    <div>
+                      <p className="text-sm text-[var(--color-text-muted)]">المنتج الأكثر مبيعاً في الفترة</p>
+                      <p className="text-lg font-bold">{top.name}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <div className="text-center">
+                      <p className="text-sm text-[var(--color-text-muted)]">الطلبات</p>
+                      <p className="text-xl font-bold">{top.orders}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm text-[var(--color-text-muted)]">تم التوصيل</p>
+                      <p className="text-xl font-bold text-[var(--color-success)]">{top.delivered}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm text-[var(--color-text-muted)]">الإيراد</p>
+                      <p className="text-xl font-bold">{formatCurrency(top.revenue)}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm text-[var(--color-text-muted)]">معدل التوصيل</p>
+                      <p className="text-xl font-bold">{top.deliveryRate.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <CardTitle>المنتجات المُباعة ({filtered.length})</CardTitle>
+                <div className="flex items-center gap-4 text-sm text-[var(--color-text-muted)]">
+                  <span>إجمالي الطلبات: <strong>{totalOrders}</strong></span>
+                  <span>إجمالي الإيراد: <strong>{formatCurrency(totalRevenue)}</strong></span>
+                </div>
+                <Input
+                  placeholder="بحث عن منتج..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="w-56"
+                />
+              </div>
+            </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <Table>
@@ -141,6 +217,7 @@ export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }
             </div>
           </CardContent>
         </Card>
+      </>
       )}
 
       {activeTab === 'pricing' && (
