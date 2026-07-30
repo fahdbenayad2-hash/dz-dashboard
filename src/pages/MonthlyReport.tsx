@@ -4,6 +4,8 @@ import type { TrackingOrder } from '@/types';
 import { KPICard } from '@/components/shared/KPICard';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { BarChart } from '@/components/charts/BarChart';
 import { DonutChart } from '@/components/charts/DonutChart';
 import { LineChart } from '@/components/charts/LineChart';
@@ -12,22 +14,26 @@ import {
   isValidDate, getDateISOString,
   getTrackingMetrics, getTrackingStatusDistribution, getProductCountsTracking, getWilayaCountsTracking,
   getMonthlyBreakdown, getAvailableMonths, getLast3MonthsSummary, formatMonthLabel,
+  getPeriodBreakdown,
 } from '@/lib/dashboardMetrics';
 
-export function MonthlyReport({ trackingOrders }: { trackingOrders: TrackingOrder[] }) {
-  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
+function toInputDate(d: Date): string {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
 
-  const availableMonths = useMemo(() => getAvailableMonths(trackingOrders), [trackingOrders]);
+export function MonthlyReport({ trackingOrders }: { trackingOrders: TrackingOrder[] }) {
+  const [dateFrom, setDateFrom] = useState(() => {
+    const d = new Date(); d.setDate(1); return toInputDate(d);
+  });
+  const [dateTo, setDateTo] = useState(() => toInputDate(new Date()));
 
   const last3 = useMemo(() => getLast3MonthsSummary(trackingOrders), [trackingOrders]);
 
-  const monthly = useMemo(() => {
-    if (!selectedMonth) return null;
-    return getMonthlyBreakdown(trackingOrders, selectedMonth);
-  }, [trackingOrders, selectedMonth]);
+  const breakdown = useMemo(() => {
+    const from = new Date(dateFrom + 'T00:00:00');
+    const to = new Date(dateTo + 'T23:59:59');
+    return getPeriodBreakdown(trackingOrders, from, to);
+  }, [trackingOrders, dateFrom, dateTo]);
 
   return (
     <div className="space-y-6">
@@ -99,28 +105,45 @@ export function MonthlyReport({ trackingOrders }: { trackingOrders: TrackingOrde
         </CardContent>
       </Card>
 
-      {/* Section B: Selected Month Report */}
+      {/* Section B: Custom Period Report */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between flex-wrap gap-3">
-            <CardTitle>تقرير الشهر</CardTitle>
-            <Select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="w-48">
-              {availableMonths.map(m => (
-                <option key={m} value={m}>{formatMonthLabel(m)}</option>
-              ))}
-            </Select>
+            <CardTitle>تقرير الفترة</CardTitle>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-[var(--color-text-muted)]">من</label>
+                <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-40" />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-[var(--color-text-muted)]">إلى</label>
+                <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-40" />
+              </div>
+              <Button variant="outline" size="sm" onClick={() => {
+                const d = new Date(); d.setDate(1); setDateFrom(toInputDate(d)); setDateTo(toInputDate(new Date()));
+              }}>هذا الشهر</Button>
+              <Button variant="outline" size="sm" onClick={() => {
+                const d = new Date(); const m = new Date(); m.setMonth(m.getMonth() - 1); m.setDate(1);
+                const end = new Date(); end.setDate(0);
+                setDateFrom(toInputDate(m)); setDateTo(toInputDate(end));
+              }}>الشهر الماضي</Button>
+              <Button variant="outline" size="sm" onClick={() => {
+                const d = new Date(); const w = new Date(); w.setDate(d.getDate() - 7);
+                setDateFrom(toInputDate(w)); setDateTo(toInputDate(d));
+              }}>آخر 7 أيام</Button>
+            </div>
           </div>
         </CardHeader>
-        {monthly && (
+        {breakdown && (
           <CardContent className="space-y-6">
             {/* KPIs */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-              <KPICard icon={<Package className="h-5 w-5" />} label="إجمالي الطلبات" value={formatNumber(monthly.metrics.total)} />
-              <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم التوصيل" value={formatNumber(monthly.metrics.delivered)} color="#1D9E75" />
-              <KPICard icon={<XCircle className="h-5 w-5" />} label="مرتجع" value={formatNumber(monthly.metrics.returned)} color="#E24B4A" />
-              <KPICard icon={<Package className="h-5 w-5" />} label="قيد التوصيل" value={formatNumber(monthly.metrics.inTransit)} color="#EF9F27" />
-              <KPICard icon={<DollarSign className="h-5 w-5" />} label="الإيراد" value={formatCurrency(monthly.metrics.totalRevenue)} color="#378ADD" />
-              <KPICard icon={<DollarSign className="h-5 w-5" />} label="صافي الإيراد" value={formatCurrency(monthly.metrics.netRevenue)} color="#1D9E75" />
+              <KPICard icon={<Package className="h-5 w-5" />} label="إجمالي الطلبات" value={formatNumber(breakdown.metrics.total)} />
+              <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم التوصيل" value={formatNumber(breakdown.metrics.delivered)} color="#1D9E75" />
+              <KPICard icon={<XCircle className="h-5 w-5" />} label="مرتجع" value={formatNumber(breakdown.metrics.returned)} color="#E24B4A" />
+              <KPICard icon={<Package className="h-5 w-5" />} label="قيد التوصيل" value={formatNumber(breakdown.metrics.inTransit)} color="#EF9F27" />
+              <KPICard icon={<DollarSign className="h-5 w-5" />} label="الإيراد" value={formatCurrency(breakdown.metrics.totalRevenue)} color="#378ADD" />
+              <KPICard icon={<DollarSign className="h-5 w-5" />} label="صافي الإيراد" value={formatCurrency(breakdown.metrics.netRevenue)} color="#1D9E75" />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -128,7 +151,7 @@ export function MonthlyReport({ trackingOrders }: { trackingOrders: TrackingOrde
                 <CardHeader><CardTitle>معدل التوصيل</CardTitle></CardHeader>
                 <CardContent>
                   <p className="text-2xl font-bold tabular-nums text-[var(--color-success)]">
-                    {formatPercent(monthly.metrics.deliveryRate)}
+                    {formatPercent(breakdown.metrics.deliveryRate)}
                   </p>
                 </CardContent>
               </Card>
@@ -136,7 +159,7 @@ export function MonthlyReport({ trackingOrders }: { trackingOrders: TrackingOrde
                 <CardHeader><CardTitle>معدل الإرجاع</CardTitle></CardHeader>
                 <CardContent>
                   <p className="text-2xl font-bold tabular-nums text-[var(--color-danger)]">
-                    {formatPercent(monthly.metrics.returnRate)}
+                    {formatPercent(breakdown.metrics.returnRate)}
                   </p>
                 </CardContent>
               </Card>
@@ -144,7 +167,7 @@ export function MonthlyReport({ trackingOrders }: { trackingOrders: TrackingOrde
                 <CardHeader><CardTitle>متوسط قيمة الطلب</CardTitle></CardHeader>
                 <CardContent>
                   <p className="text-2xl font-bold tabular-nums text-[var(--color-primary)]">
-                    {formatCurrency(monthly.metrics.avgOrderValue)}
+                    {formatCurrency(breakdown.metrics.avgOrderValue)}
                   </p>
                 </CardContent>
               </Card>
@@ -157,8 +180,8 @@ export function MonthlyReport({ trackingOrders }: { trackingOrders: TrackingOrde
                 <CardContent>
                   <div className="h-72">
                     <LineChart
-                      labels={monthly.dailyTrend.map(d => d.date.slice(5))}
-                      datasets={[{ label: 'الطلبات', data: monthly.dailyTrend.map(d => d.orders), color: '#378ADD' }]}
+                      labels={breakdown.dailyTrend.map(d => d.date.slice(5))}
+                      datasets={[{ label: 'الطلبات', data: breakdown.dailyTrend.map(d => d.orders), color: '#378ADD' }]}
                     />
                   </div>
                 </CardContent>
@@ -168,8 +191,8 @@ export function MonthlyReport({ trackingOrders }: { trackingOrders: TrackingOrde
                 <CardContent>
                   <div className="h-72">
                     <LineChart
-                      labels={monthly.dailyTrend.map(d => d.date.slice(5))}
-                      datasets={[{ label: 'الإيراد', data: monthly.dailyTrend.map(d => d.revenue), color: '#1D9E75' }]}
+                      labels={breakdown.dailyTrend.map(d => d.date.slice(5))}
+                      datasets={[{ label: 'الإيراد', data: breakdown.dailyTrend.map(d => d.revenue), color: '#1D9E75' }]}
                     />
                   </div>
                 </CardContent>
@@ -182,23 +205,23 @@ export function MonthlyReport({ trackingOrders }: { trackingOrders: TrackingOrde
                 <CardHeader><CardTitle>توزيع حالات التتبع</CardTitle></CardHeader>
                 <CardContent>
                   <div className="h-64">
-                    {(monthly.statusDist.delivered + monthly.statusDist.returned + monthly.statusDist.inTransit + monthly.statusDist.inDelivery + monthly.statusDist.others) > 0 && (
+                    {(breakdown.statusDist.delivered + breakdown.statusDist.returned + breakdown.statusDist.inTransit + breakdown.statusDist.inDelivery + breakdown.statusDist.others) > 0 && (
                       <DonutChart
                         labels={['تم التوصيل', 'مرتجع', 'قيد التوصيل', 'جاري التوزيع', 'أخرى']}
-                        values={[monthly.statusDist.delivered, monthly.statusDist.returned, monthly.statusDist.inTransit, monthly.statusDist.inDelivery, monthly.statusDist.others]}
+                        values={[breakdown.statusDist.delivered, breakdown.statusDist.returned, breakdown.statusDist.inTransit, breakdown.statusDist.inDelivery, breakdown.statusDist.others]}
                       />
                     )}
                   </div>
                 </CardContent>
               </Card>
               <Card>
-                <CardHeader><CardTitle>أفضل 10 منتجات</CardTitle></CardHeader>
+                <CardHeader><CardTitle>أفضل 10 منتجات (حسب العدد)</CardTitle></CardHeader>
                 <CardContent>
                   <div className="h-64">
-                    {monthly.topProducts.length > 0 && (
+                    {breakdown.topProducts.length > 0 && (
                       <BarChart
-                        labels={monthly.topProducts.map(p => p[0]).reverse()}
-                        values={monthly.topProducts.map(p => p[1]).reverse()}
+                        labels={breakdown.topProducts.map(p => p[0]).reverse()}
+                        values={breakdown.topProducts.map(p => p[1]).reverse()}
                         color="#1D9E75"
                         horizontal
                       />
@@ -210,10 +233,10 @@ export function MonthlyReport({ trackingOrders }: { trackingOrders: TrackingOrde
                 <CardHeader><CardTitle>أفضل 10 ولايات</CardTitle></CardHeader>
                 <CardContent>
                   <div className="h-64">
-                    {monthly.topWilayas.length > 0 && (
+                    {breakdown.topWilayas.length > 0 && (
                       <BarChart
-                        labels={monthly.topWilayas.map(w => w[0]).reverse()}
-                        values={monthly.topWilayas.map(w => w[1]).reverse()}
+                        labels={breakdown.topWilayas.map(w => w[0]).reverse()}
+                        values={breakdown.topWilayas.map(w => w[1]).reverse()}
                         color="#378ADD"
                         horizontal
                       />

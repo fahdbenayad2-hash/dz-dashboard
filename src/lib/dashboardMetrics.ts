@@ -291,6 +291,22 @@ export function getMonthlyBreakdown(tracking: TrackingOrder[], yearMonth: string
     topProducts: getProductOrderCountsTracking(filtered),
     topWilayas: getWilayaCountsTracking(filtered),
     dailyTrend: getDailyRevenueTracking(filtered, daysInMonth, lastDayOfMonth),
+    periodLabel: formatMonthLabel(yearMonth),
+  };
+}
+
+export function getPeriodBreakdown(tracking: TrackingOrder[], from: Date, to: Date) {
+  const filtered = tracking.filter(t => isValidDate(t.date) && t.date! >= from && t.date! <= to);
+  const days = Math.max(Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)) + 1, 1);
+  const label = `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, '0')}-${String(from.getDate()).padStart(2, '0')} → ${to.getFullYear()}-${String(to.getMonth() + 1).padStart(2, '0')}-${String(to.getDate()).padStart(2, '0')}`;
+  return {
+    orders: filtered,
+    metrics: getTrackingMetrics(filtered),
+    statusDist: getTrackingStatusDistribution(filtered),
+    topProducts: getProductOrderCountsTracking(filtered),
+    topWilayas: getWilayaCountsTracking(filtered),
+    dailyTrend: getDailyRevenueTracking(filtered, days, to),
+    periodLabel: label,
   };
 }
 
