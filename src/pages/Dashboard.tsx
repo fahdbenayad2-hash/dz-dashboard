@@ -15,7 +15,7 @@ import { formatCurrency, formatNumber } from '@/lib/utils';
 import {
   getOrderMetrics, normalizeStatus,
   getTrackingMetrics, getTrackingStatusDistribution, getAgentCountsTracking, getWilayaCountsTracking, getProductCountsTracking, getMonthlyRevenueTracking, getDailyRevenueTracking,
-  getPeriodOrders, getPeriodDelivered, getPeriodRevenue, filterByPeriod, getDateISOStringLocal, isValidDate,
+  getPeriodOrders, getPeriodDelivered, getPeriodRevenue, filterByPeriod,
   getSettledMetrics,
 } from '@/lib/dashboardMetrics';
 
@@ -38,7 +38,7 @@ function useDashboardData(orders: Order[], tracking: TrackingOrder[], fromStr: s
     const wilayaData = getWilayaCountsTracking(periodTracking);
     const productData = getProductCountsTracking(periodTracking);
     const monthlyData = getMonthlyRevenueTracking(tracking);
-    const daysInPeriod = Math.max(Math.round((dateTo.getTime() - dateFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1, 1);
+    const daysInPeriod = Math.max(Math.floor((dateTo.getTime() - dateFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1, 1);
     const revenueTrend = getDailyRevenueTracking(periodTracking, daysInPeriod, dateTo);
     const settledMetrics = getSettledMetrics(periodTracking);
 
@@ -57,7 +57,6 @@ function useDashboardData(orders: Order[], tracking: TrackingOrder[], fromStr: s
       .slice(0, 1)
       .map(([name, d]) => ({ name, ...d }))[0] || null;
 
-    console.log('[DZ-CHANGE] tracking-metrics', trackingMetrics);
 
     return {
       ...trackingMetrics,
@@ -80,8 +79,6 @@ function useDashboardData(orders: Order[], tracking: TrackingOrder[], fromStr: s
 }
 
 export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackingOrders: TrackingOrder[] }) {
-  console.log('[DZ-DASHBOARD] orders:', orders.length, 'trackingOrders:', trackingOrders.length);
-  console.log('[DZ-DASHBOARD] first trackingOrder:', trackingOrders[0]);
   const [dateFrom, setDateFrom] = useState(() => toInputDate(new Date()));
   const [dateTo, setDateTo] = useState(() => toInputDate(new Date()));
   const data = useDashboardData(orders, trackingOrders, dateFrom, dateTo);
@@ -101,7 +98,7 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
       );
     }
     if (statusFilter !== 'all') {
-      list = list.filter(o => o.status === statusFilter);
+      list = list.filter(o => normalizeStatus(o.status) === statusFilter);
     }
     return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [orders, search, statusFilter]);
@@ -125,11 +122,11 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
           const d = new Date(); setDateFrom(toInputDate(d)); setDateTo(toInputDate(d));
         }}>اليوم</Button>
         <Button variant="outline" size="sm" onClick={() => {
-          const d = new Date(); const weekAgo = new Date(); weekAgo.setDate(d.getDate() - 7);
+          const d = new Date(); const weekAgo = new Date(); weekAgo.setDate(d.getDate() - 6);
           setDateFrom(toInputDate(weekAgo)); setDateTo(toInputDate(d));
         }}>آخر 7 أيام</Button>
         <Button variant="outline" size="sm" onClick={() => {
-          const d = new Date(); const monthAgo = new Date(); monthAgo.setDate(d.getDate() - 30);
+          const d = new Date(); const monthAgo = new Date(); monthAgo.setDate(d.getDate() - 29);
           setDateFrom(toInputDate(monthAgo)); setDateTo(toInputDate(d));
         }}>آخر 30 يوم</Button>
       </div>
@@ -163,19 +160,19 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        <KPICard icon={<PackageCheck className="h-5 w-5" />} label="إجمالي الطلبات (مؤكدة)" value={formatNumber(data.total)} change={0} />
-        <KPICard icon={<DollarSign className="h-5 w-5" />} label="إجمالي الإيراد" value={formatCurrency(data.totalRevenue)} change={2.3} color="#1D9E75" />
-        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم التوصيل" value={formatNumber(data.delivered)} change={1.1} color="#1D9E75" />
-        <KPICard icon={<XCircle className="h-5 w-5" />} label="المرتجعات" value={formatNumber(data.returned)} change={-0.5} color="#E24B4A" />
-        <KPICard icon={<BarChart3 className="h-5 w-5" />} label="متوسط قيمة الطلب" value={formatCurrency(data.avgOrderValue)} change={0.8} color="#7F77DD" />
-        <KPICard icon={<PiggyBank className="h-5 w-5" />} label="صافي بعد الشحن" value={formatCurrency(data.netRevenue)} change={1.5} />
+        <KPICard icon={<PackageCheck className="h-5 w-5" />} label="طلبات التتبع (الفترة)" value={formatNumber(data.total)} />
+        <KPICard icon={<DollarSign className="h-5 w-5" />} label="قيمة الطلبات (كل الحالات)" value={formatCurrency(data.totalRevenue)} color="#1D9E75" />
+        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم التوصيل" value={formatNumber(data.delivered)} color="#1D9E75" />
+        <KPICard icon={<XCircle className="h-5 w-5" />} label="المرتجعات" value={formatNumber(data.returned)} color="#E24B4A" />
+        <KPICard icon={<BarChart3 className="h-5 w-5" />} label="متوسط قيمة الطلب" value={formatCurrency(data.avgOrderValue)} color="#7F77DD" />
+        <KPICard icon={<PiggyBank className="h-5 w-5" />} label="قيمة المسلّم دون شحن العميل" value={formatCurrency(data.netRevenue)} />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         <KPICard icon={<AlarmClock className="h-5 w-5" />} label="طلبات جديدة (الفترة)" value={formatNumber(data.ordersToday)} color="#378ADD" />
         <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم التوصيل (الفترة)" value={formatNumber(data.deliveredToday)} color="#1D9E75" />
         <KPICard icon={<DollarSign className="h-5 w-5" />} label="إيراد (الفترة)" value={formatCurrency(data.periodRevenue)} color="#1D9E75" />
         <KPICard icon={<Package className="h-5 w-5" />} label="قيد التوصيل" value={formatNumber(data.inTransit + data.inDelivery)} color="#EF9F27" />
-        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="معدل التوصيل (محسوم)" value={data.settledMetrics.deliveryRate.toFixed(1) + '%'} change={0} changeLabel={`من ${formatNumber(data.settledMetrics.settledCount)} طلب`} color="#1D9E75" />
+        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="معدل التوصيل (محسوم)" value={data.settledMetrics.deliveryRate.toFixed(1) + '%'} changeLabel={`من ${formatNumber(data.settledMetrics.settledCount)} طلب`} color="#1D9E75" />
         <KPICard icon={<XCircle className="h-5 w-5" />} label="معدل الإرجاع" value={data.returnRate.toFixed(1) + '%'} color="#E24B4A" />
         <KPICard icon={<Timer className="h-5 w-5" />} label="معلق (غير مؤكد)" value={formatNumber(data.pendingOrders)} color="#7F77DD" />
       </div>

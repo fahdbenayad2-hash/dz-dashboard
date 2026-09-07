@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { toCSV } from '@/lib/csv';
+import { useState } from 'react';
 import type { Order, OrderStatus } from '@/types';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -16,22 +17,23 @@ const statusOptions: OrderStatus[] = ['Confirmed', 'Failed', 'Pending', 'Waiting
 export function Orders({ orders }: { orders: Order[] }) {
   const {
     filters, updateFilter, sortKey, sortDir, toggleSort,
-    filteredOrders, uniqueStatuses, uniqueWilayas, uniqueAgents,
+    filteredOrders, uniqueWilayas, uniqueAgents,
   } = useFilters(orders);
 
   const [page, setPage] = useState(0);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const perPage = 25;
 
-  const pagedOrders = filteredOrders.slice(page * perPage, (page + 1) * perPage);
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(filteredOrders.length / perPage) - 1));
+  const pagedOrders = filteredOrders.slice(currentPage * perPage, (currentPage + 1) * perPage);
   const totalPages = Math.ceil(filteredOrders.length / perPage);
 
   const exportCSV = () => {
     const headers = ['رقم الطلب', 'التاريخ', 'العميل', 'الهاتف', 'الولاية', 'الحالة', 'المنتج', 'الإجمالي', 'رسوم الشحن', 'الوكيل'];
-    const rows = orders.map(o => [
+    const rows = filteredOrders.map(o => [
       o.id, o.date, o.customer, o.phone, o.wilaya, o.status, o.product, o.total, o.delivery, o.agent,
     ]);
-    const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+    const csv = toCSV([headers, ...rows]);
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -41,14 +43,14 @@ export function Orders({ orders }: { orders: Order[] }) {
     URL.revokeObjectURL(url);
   };
 
-  const SortHeader = ({ label, field }: { label: string; field: keyof Order }) => (
-    <TableHead onClick={() => toggleSort(field)} className="cursor-pointer hover:text-[var(--color-text)]">
-      <span className="flex items-center gap-1">
+  const renderSortHeader = (label: string, field: keyof Order) => (
+    <TableHead aria-sort={sortKey === field ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} className="cursor-pointer hover:text-[var(--color-text)]">
+      <button onClick={() => toggleSort(field)} className="flex items-center gap-1">
         {label}
         {sortKey === field && (
           <ArrowUpDown className={`h-3 w-3 transition-transform ${sortDir === 'desc' ? 'rotate-180' : ''}`} />
         )}
-      </span>
+      </button>
     </TableHead>
   );
 
@@ -118,16 +120,16 @@ export function Orders({ orders }: { orders: Order[] }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <SortHeader label="رقم الطلب" field="id" />
+                  {renderSortHeader("رقم الطلب", "id")}
                   <TableHead>التاريخ</TableHead>
-                  <SortHeader label="العميل" field="customer" />
+                  {renderSortHeader("العميل", "customer")}
                   <TableHead>الهاتف</TableHead>
-                  <SortHeader label="الولاية" field="wilaya" />
-                  <SortHeader label="الحالة" field="status" />
-                  <SortHeader label="المنتج" field="product" />
-                  <SortHeader label="الإجمالي" field="total" />
-                  <SortHeader label="رسوم الشحن" field="delivery" />
-                  <SortHeader label="الوكيل" field="agent" />
+                  {renderSortHeader("الولاية", "wilaya")}
+                  {renderSortHeader("الحالة", "status")}
+                  {renderSortHeader("المنتج", "product")}
+                  {renderSortHeader("الإجمالي", "total")}
+                  {renderSortHeader("رسوم الشحن", "delivery")}
+                  {renderSortHeader("الوكيل", "agent")}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -156,11 +158,11 @@ export function Orders({ orders }: { orders: Order[] }) {
           {totalPages > 1 && (
             <div className="flex items-center justify-between pt-4 border-t border-[var(--color-border)]">
               <span className="text-sm text-[var(--color-text-muted)]">
-                الصفحة {page + 1} من {totalPages} ({filteredOrders.length} طلب)
+                الصفحة {currentPage + 1} من {totalPages} ({filteredOrders.length} طلب)
               </span>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>السابق</Button>
-                <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>التالي</Button>
+                <Button variant="outline" size="sm" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>السابق</Button>
+                <Button variant="outline" size="sm" disabled={currentPage >= totalPages - 1} onClick={() => setPage(currentPage + 1)}>التالي</Button>
               </div>
             </div>
           )}

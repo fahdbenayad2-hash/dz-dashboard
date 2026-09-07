@@ -22,14 +22,15 @@ interface DailyHistoryResult {
 
 function loadSnapshots(): DailySnapshot[] {
   const raw = getAllSnapshots();
-  return raw.map(s => s.data as DailySnapshot).filter(Boolean);
+  const days = new Map<string, DailySnapshot>();
+  for (const item of raw) { const snapshot = item.data as DailySnapshot; if (snapshot && /^\d{4}-\d{2}-\d{2}$/.test(snapshot.date)) days.set(snapshot.date, snapshot); }
+  return [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export function useDailyHistory(trackingOrders: TrackingOrder[]): DailyHistoryResult {
   const [snapshots, setSnapshots] = useState<DailySnapshot[]>(() => loadSnapshots());
 
   useEffect(() => {
-    setSnapshots(loadSnapshots());
     const handler = () => setSnapshots(loadSnapshots());
     window.addEventListener('snapshot-saved', handler);
     return () => window.removeEventListener('snapshot-saved', handler);
@@ -83,22 +84,24 @@ export function useDailyHistory(trackingOrders: TrackingOrder[]): DailyHistoryRe
 
   const last30 = useMemo(() => {
     const sorted = [...snapshots].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    return sorted.slice(-30);
-  }, [snapshots]);
+    const from = new Date(todayStr + 'T12:00:00+01:00'); from.setDate(from.getDate() - 29);
+    return sorted.filter(s => s.date >= getDateISOString(from) && s.date <= todayStr);
+  }, [snapshots, todayStr]);
 
   const ma7 = useMemo(() => {
-    const recent = last30.slice(-7);
+    const from = new Date(todayStr + 'T12:00:00+01:00'); from.setDate(from.getDate() - 6);
+    const recent = last30.filter(s => s.date >= getDateISOString(from));
     if (recent.length === 0) return { deliveryRate: 0, returnRate: 0 };
     return {
-      deliveryRate: recent.reduce((s, d) => s + (d.delivered / Math.max(d.totalOrders, 1)) * 100, 0) / recent.length,
+      deliveryRate: recent.reduce((s, d) => s + (d.delivered / Math.max(d.delivered + d.returned, 1)) * 100, 0) / recent.length,
       returnRate: recent.reduce((s, d) => s + (d.returned / Math.max(d.delivered + d.returned, 1)) * 100, 0) / recent.length,
     };
-  }, [last30]);
+  }, [last30, todayStr]);
 
   const ma30 = useMemo(() => {
     if (last30.length === 0) return { deliveryRate: 0, returnRate: 0 };
     return {
-      deliveryRate: last30.reduce((s, d) => s + (d.delivered / Math.max(d.totalOrders, 1)) * 100, 0) / last30.length,
+      deliveryRate: last30.reduce((s, d) => s + (d.delivered / Math.max(d.delivered + d.returned, 1)) * 100, 0) / last30.length,
       returnRate: last30.reduce((s, d) => s + (d.returned / Math.max(d.delivered + d.returned, 1)) * 100, 0) / last30.length,
     };
   }, [last30]);

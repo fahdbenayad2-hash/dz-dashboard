@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import type { PricingInputs, PricingResult } from '@/types';
+import type { PricingInputs } from '@/types';
 import { calculatePricing } from '@/lib/financialEngine';
 import { getRiskDetail } from '@/lib/riskScore';
 

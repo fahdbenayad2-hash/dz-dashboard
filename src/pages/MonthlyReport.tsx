@@ -1,21 +1,15 @@
 import { useMemo, useState } from 'react';
-import { Package, DollarSign, CheckCircle, XCircle, BarChart3, TrendingUp, TrendingDown, Timer, CalendarDays } from 'lucide-react';
+import { Package, DollarSign, CheckCircle, XCircle, TrendingUp, TrendingDown, CalendarDays } from 'lucide-react';
 import type { TrackingOrder } from '@/types';
 import { KPICard } from '@/components/shared/KPICard';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { BarChart } from '@/components/charts/BarChart';
 import { DonutChart } from '@/components/charts/DonutChart';
 import { LineChart } from '@/components/charts/LineChart';
 import { formatCurrency, formatNumber, formatPercent } from '@/lib/utils';
-import {
-  isValidDate, getDateISOString,
-  getTrackingMetrics, getTrackingStatusDistribution, getProductCountsTracking, getWilayaCountsTracking,
-  getMonthlyBreakdown, getAvailableMonths, getLast3MonthsSummary, formatMonthLabel,
-  getPeriodBreakdown,
-} from '@/lib/dashboardMetrics';
+import { getLast3MonthsSummary, formatMonthLabel, getPeriodBreakdown } from '@/lib/dashboardMetrics';
 
 function toInputDate(d: Date): string {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -123,12 +117,12 @@ export function MonthlyReport({ trackingOrders }: { trackingOrders: TrackingOrde
                 const d = new Date(); d.setDate(1); setDateFrom(toInputDate(d)); setDateTo(toInputDate(new Date()));
               }}>هذا الشهر</Button>
               <Button variant="outline" size="sm" onClick={() => {
-                const d = new Date(); const m = new Date(); m.setMonth(m.getMonth() - 1); m.setDate(1);
+                const m = new Date(); m.setDate(1); m.setMonth(m.getMonth() - 1);
                 const end = new Date(); end.setDate(0);
                 setDateFrom(toInputDate(m)); setDateTo(toInputDate(end));
               }}>الشهر الماضي</Button>
               <Button variant="outline" size="sm" onClick={() => {
-                const d = new Date(); const w = new Date(); w.setDate(d.getDate() - 7);
+                const d = new Date(); const w = new Date(); w.setDate(d.getDate() - 6);
                 setDateFrom(toInputDate(w)); setDateTo(toInputDate(d));
               }}>آخر 7 أيام</Button>
             </div>

@@ -29,22 +29,37 @@ function totalUsedBytes(): number {
 }
 
 export function addSnapshot(data: unknown): StoredSnapshot {
-  const id = 'snap_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+  const day = data && typeof data === 'object' && 'date' in data ? String(data.date) : '';
+  const id = /^\d{4}-\d{2}-\d{2}$/.test(day) ? 'day_' + day : 'snap_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
   const createdAt = new Date().toISOString();
   const dataStr = JSON.stringify(data);
   const sizeBytes = dataStr.length * 2;
-
+  if (sizeBytes > MAX_SIZE_BYTES) throw new Error('Snapshot exceeds storage limit');
   const meta = getSnapshotMeta();
-  meta.ids.push(id);
-  meta.sizeMap[id] = sizeBytes;
-
-  const snap: StoredSnapshot = { id, createdAt, data, sizeBytes };
-  localStorage.setItem(STORAGE_KEY + '_' + id, JSON.stringify(snap));
-  saveSnapshotMeta(meta);
-
   cleanup(meta);
-
-  return snap;
+  const snap: StoredSnapshot = { id, createdAt, data, sizeBytes };
+  const key = STORAGE_KEY + '_' + id;
+  const previous = localStorage.getItem(key);
+  while (true) {
+    try {
+      localStorage.setItem(key, JSON.stringify(snap));
+      if (!meta.ids.includes(id)) meta.ids.push(id);
+      meta.sizeMap[id] = sizeBytes;
+      saveSnapshotMeta(meta);
+      cleanup(meta);
+      return snap;
+    } catch (error) {
+      if (!(error instanceof DOMException) || error.name !== 'QuotaExceededError') throw error;
+      const oldest = meta.ids.find(item => item !== id);
+      if (!oldest) {
+        if (previous) localStorage.setItem(key, previous); else localStorage.removeItem(key);
+        throw new Error('Storage full; export or remove old local snapshots', { cause: error });
+      }
+      localStorage.removeItem(STORAGE_KEY + '_' + oldest);
+      meta.ids = meta.ids.filter(item => item !== oldest);
+      delete meta.sizeMap[oldest];
+    }
+  }
 }
 
 export function getSnapshot(id: string): StoredSnapshot | null {

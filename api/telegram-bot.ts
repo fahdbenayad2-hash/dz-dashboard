@@ -1,3 +1,6 @@
+import { equalSecret } from '../server/security';
+import { fetchPublishedSheet } from '../server/sheets';
+import { classifyTrackingStatus as classifyStatus, normalizeStatus } from '../src/lib/status';
 /**
  * DZ Dashboard — Telegram Bot Webhook
  * Vercel Edge Function · /api/telegram-bot
@@ -55,19 +58,8 @@ interface TelegramUpdate {
 
 // ─── Google Sheets fetcher (server-side — no CORS issues) ────────────────────
 
-const SHEET_ID = process.env.SHEET_ID || '1WjloEKAQGJA2Z6vgnhni7aByN4ktmPc0xP7EvAUaMUw';
-
-async function fetchSheet(sheetName: string): Promise<{ c: { v: unknown; f?: string }[] | null }[]> {
-  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}&headers=1`;
-  const res = await fetch(url, { cache: 'no-store' });
-  const text = await res.text();
-  const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\)/);
-  if (!match) throw new Error('Failed to parse Google Sheets response');
-  const response = JSON.parse(match[1]);
-  if (response.status === 'error') throw new Error(response.errors?.[0]?.message || 'Sheet API error');
-  return response.table.rows || [];
-}
-
+export default async function handler(request: Request): Promise<Response> {
+  const fetchSheet = (name: string) => fetchPublishedSheet(name, request.headers.get('x-vercel-oidc-token') || undefined);
 async function fetchOrders(): Promise<Order[]> {
   const rows = await fetchSheet('Orders');
   return rows.reduce((acc: Order[], row) => {
@@ -121,36 +113,10 @@ async function fetchTracking(): Promise<TrackingOrder[]> {
 
 // ─── Status classifier (مطابق لـ sheetsApi.ts) ───────────────────────────────
 
-function classifyStatus(status: string): StatusCategory {
-  const s = (status || '').toString().trim().toLowerCase();
-  const delivered = ['livré', 'livre', 'livrée', 'delivered', 'مسلم', 'تم التسليم'];
-  const returned = ['retour', 'retourné', 'retournée', 'colis retourné', 'refus', 'refusé', 'refused', 'رجع', 'مرجع', 'إرجاع', 'annulé', 'ملغى', 'ملغي'];
-  const transit = ['en transit', 'transit', 'في الطريق', 'vers', 'expédié', 'en cours', 'sorti', 'en route'];
-  const delivery = ['en livraison', 'livraison', 'ramassé', 'en cours de livraison', 'camion', 'centre', 'توزيع', 'out for delivery', 'قيد التوزيع', 'prêt', 'en attente de ramassage'];
-  if (delivered.some(w => s.includes(w))) return 'delivered';
-  if (returned.some(w => s.includes(w))) return 'returned';
-  if (transit.some(w => s.includes(w))) return 'transit';
-  if (delivery.some(w => s.includes(w))) return 'delivery';
-  return 'others';
-}
-
 // ─── Metrics helpers (مطابق لـ dashboardMetrics.ts) ──────────────────────────
-
-function normalizeStatus(status: string): string {
-  const s = String(status || '').trim();
-  if (s === 'مؤكدة') return 'Confirmed';
-  if (s.includes('فاشلة')) return 'Failed';
-  if (s.includes('انتظار') || s.includes('قيد الانتظار')) return 'Waiting';
-  if (s.includes('معلق') || s.includes('قيد المعالجة')) return 'Pending';
-  return 'Unknown';
-}
 
 function isValidDate(d: unknown): d is Date {
   return d instanceof Date && !isNaN(d.getTime());
-}
-
-function toDateKey(date: Date): string {
-  return date.toISOString().slice(0, 10);
 }
 
 function toLocalDateKey(date: Date): string {
@@ -683,15 +649,19 @@ async function sendTyping(chatId: number, token: string): Promise<void> {
 
 // ─── Main Edge Function handler ───────────────────────────────────────────────
 
-export default async function handler(req: Request): Promise<Response> {
+async function dispatch(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }
 
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!webhookSecret) return new Response('Not configured', { status: 503 });
+  if (!await equalSecret(req.headers.get('X-Telegram-Bot-Api-Secret-Token') || '', webhookSecret)) return new Response('Forbidden', { status: 403 });
+
   const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
   const ALLOWED_ID = process.env.TELEGRAM_ALLOWED_ID;
 
-  if (!BOT_TOKEN) {
+  if (!BOT_TOKEN || !ALLOWED_ID?.trim()) {
     console.error('[BOT] TELEGRAM_BOT_TOKEN not set');
     return new Response('Bot not configured', { status: 500 });
   }
@@ -704,7 +674,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const message = update.message;
-  if (!message?.text) return new Response('OK', { status: 200 });
+  if (!message || typeof message.text !== 'string' || !message.chat || !message.from) return new Response('OK', { status: 200 });
 
   const chatId = message.chat.id;
   const senderId = message.from.id;
@@ -712,10 +682,8 @@ export default async function handler(req: Request): Promise<Response> {
 
   // ── Security: قبول Chat IDs المعتمدة فقط ──
   const allowedIds = ALLOWED_ID ? ALLOWED_ID.split(',').map(id => id.trim()) : [];
-  if (allowedIds.length > 0 && !allowedIds.includes(String(senderId))) {
-    console.warn(`[BOT] Unauthorized access attempt from: ${senderId}`);
-    await sendMessage(chatId, '🚫 غير مصرح لك باستخدام هذا البوت.', BOT_TOKEN);
-    return new Response('OK', { status: 200 });
+  if (!allowedIds.includes(String(senderId)) || message.chat.type !== 'private' || chatId !== senderId) {
+    return new Response('Forbidden', { status: 403 });
   }
 
   // ── Route الأوامر ──
@@ -780,4 +748,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   return new Response('OK', { status: 200 });
+}
+
+  return dispatch(request);
 }

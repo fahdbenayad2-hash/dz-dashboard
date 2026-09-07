@@ -9,20 +9,25 @@ interface LoginProps {
 
 export function Login({ onLogin }: LoginProps) {
   const [password, setPassword] = useState('');
-  const [error, setError] = useState(false);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
   const [show, setShow] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(false);
-    const success = login(password);
+    setError('');
+    setBusy(true);
+    try {
+    const success = await login(password);
     if (success) {
       onLogin();
       navigate('/', { replace: true });
     } else {
-      setError(true);
+      setError('كلمة المرور غير صحيحة');
     }
+    } catch (error) { setError(error instanceof Error ? error.message : 'تعذّر الاتصال'); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -42,13 +47,16 @@ export function Login({ onLogin }: LoginProps) {
               <input
                 type={show ? 'text' : 'password'}
                 value={password}
-                onChange={e => { setPassword(e.target.value); setError(false); }}
+                onChange={e => { setPassword(e.target.value); setError(''); }}
                 placeholder="كلمة المرور"
                 className="flex h-11 w-full rounded-lg border border-[var(--color-border)] bg-transparent px-4 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent pl-10"
+                aria-label="كلمة المرور"
+                autoComplete="current-password"
                 autoFocus
               />
               <button
                 type="button"
+                aria-label={show ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
                 onClick={() => setShow(s => !s)}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
               >
@@ -57,12 +65,12 @@ export function Login({ onLogin }: LoginProps) {
             </div>
 
             {error && (
-              <p className="text-sm text-[var(--color-danger)] text-center">كلمة المرور غير صحيحة</p>
+              <p className="text-sm text-[var(--color-danger)] text-center">{error}</p>
             )}
 
             <button
               type="submit"
-              disabled={!password}
+              disabled={!password || busy}
               className="w-full h-11 rounded-lg bg-[var(--color-primary)] text-white font-medium text-sm hover:bg-[var(--color-primary-dark)] disabled:opacity-50 disabled:pointer-events-none transition-colors"
             >
               دخول

@@ -40,7 +40,7 @@ export function assessOrderRisk(wilaya: string, totalAmount: number): OrderRiskA
   const wilayaRisk = getWilayaRisk(wilaya);
   const amountRisk = getAmountRisk(totalAmount);
 
-  const score = Math.round(wilayaRisk * 0.3 + amountRisk);
+  const score = Math.min(100, Math.round(wilayaRisk * 0.3 + amountRisk));
   const { level, color } = scoreToLevel(score);
 
   const factors: OrderRiskAssessment['factors'] = [
@@ -62,7 +62,7 @@ export function assessOrderRisk(wilaya: string, totalAmount: number): OrderRiskA
 export function assessCustomerRisk(totalOrders: number, returnedOrders: number): CustomerRiskAssessment {
   const returnRate = totalOrders > 0 ? (returnedOrders / totalOrders) * 100 : 0;
 
-  let score = 0;
+  let score: number;
 
   if (totalOrders >= 10) {
     if (returnRate > 50) score = 50;

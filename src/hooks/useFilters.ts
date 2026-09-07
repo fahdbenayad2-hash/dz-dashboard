@@ -1,3 +1,4 @@
+import { normalizeStatus } from '@/lib/status';
 import { useState, useMemo, useCallback } from 'react';
 import type { Order, OrderStatus, FilterState } from '@/types';
 
@@ -37,6 +38,7 @@ export function useFilters(orders: Order[]) {
       const q = filters.search.toLowerCase();
       result = result.filter(o =>
         o.customer.toLowerCase().includes(q) ||
+        o.phone.toLowerCase().includes(q) ||
         o.wilaya.toLowerCase().includes(q) ||
         o.agent.toLowerCase().includes(q) ||
         o.product.toLowerCase().includes(q) ||
@@ -45,7 +47,7 @@ export function useFilters(orders: Order[]) {
     }
 
     if (filters.statusFilter.length > 0) {
-      result = result.filter(o => filters.statusFilter.includes(o.status));
+      result = result.filter(o => filters.statusFilter.some(status => status === normalizeStatus(o.status)));
     }
 
     if (filters.wilayaFilter.length > 0) {

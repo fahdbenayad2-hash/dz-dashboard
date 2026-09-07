@@ -228,8 +228,7 @@ export function buildFinancialAnalysis(
     + totalCOGS + totalShippingPaid + totalPackaging + returnTotalCost
     + totalAdAndOther;
 
-  const trueNetProfit = period.netRevenue - totalCOGS - totalShippingPaid - totalPackaging
-    - returnTotalCost - expenses.adSpend - expenses.otherExpenses;
+  const trueNetProfit = period.grossRevenue - totalCost;
   const trueNetMargin = period.grossRevenue > 0 ? (trueNetProfit / period.grossRevenue) * 100 : 0;
   const profitPerUnit = period.avgOrderValue > 0
     ? period.avgOrderValue - variableCostPerOrder - period.avgDeliveryCost : 0;

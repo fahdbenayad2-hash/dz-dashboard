@@ -1,13 +1,8 @@
+import { businessDate } from './businessDate';
 import type { Order, TrackingOrder } from '@/types';
 
-export function normalizeStatus(status: string): string {
-  const s = String(status || '').trim();
-  if (s === 'مؤكدة') return 'Confirmed';
-  if (s.includes('فاشلة')) return 'Failed';
-  if (s.includes('انتظار') || s.includes('قيد الانتظار')) return 'Waiting';
-  if (s.includes('معلق') || s.includes('قيد المعالجة')) return 'Pending';
-  return 'Unknown';
-}
+import { normalizeStatus } from './status';
+export { normalizeStatus } from './status';
 
 export function parseOrderDate(dateStr: string): Date | null {
   if (!dateStr) return null;
@@ -20,7 +15,7 @@ export function isValidDate(d: unknown): d is Date {
 }
 
 export function getDateISOString(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return businessDate(date);
 }
 
 export function getDateISOStringLocal(date: Date): string {
@@ -365,16 +360,18 @@ export function getYearComparison(tracking: TrackingOrder[], year: number) {
   const currentYear = getYearlyBreakdown(tracking, year);
   const previousYear = getYearlyBreakdown(tracking, year - 1);
 
+  const settledRate = (months: ReturnType<typeof getYearlyBreakdown>, field: 'delivered' | 'returned') => {
+    const settled = months.reduce((sum, month) => sum + month.delivered + month.returned, 0);
+    return settled ? months.reduce((sum, month) => sum + month[field], 0) / settled * 100 : 0;
+  };
   const sumYear = (months: ReturnType<typeof getYearlyBreakdown>) => ({
     totalOrders: months.reduce((s, m) => s + m.totalOrders, 0),
     delivered: months.reduce((s, m) => s + m.delivered, 0),
     returned: months.reduce((s, m) => s + m.returned, 0),
     revenue: months.reduce((s, m) => s + m.revenue, 0),
     netRevenue: months.reduce((s, m) => s + m.netRevenue, 0),
-    avgDeliveryRate: months.filter(m => m.totalOrders > 0).reduce((s, m) => s + m.deliveryRate, 0) /
-      (months.filter(m => m.totalOrders > 0).length || 1),
-    avgCancellationRate: months.filter(m => m.totalOrders > 0).reduce((s, m) => s + m.cancellationRate, 0) /
-      (months.filter(m => m.totalOrders > 0).length || 1),
+    avgDeliveryRate: settledRate(months, 'delivered'),
+    avgCancellationRate: settledRate(months, 'returned'),
   });
 
   const current = sumYear(currentYear);
@@ -399,13 +396,13 @@ export function getYearComparison(tracking: TrackingOrder[], year: number) {
 }
 
 export function getYearlyTopProducts(tracking: TrackingOrder[], year: number, limit = 15) {
-  const map = new Map<string, { revenue: number; orders: number; returned: number }>();
+  const map = new Map<string, { revenue: number; orders: number; delivered: number; returned: number }>();
   tracking
     .filter(t => isValidDate(t.date) && t.date.getFullYear() === year && t.product)
     .forEach(t => {
-      const e = map.get(t.product) || { revenue: 0, orders: 0, returned: 0 };
+      const e = map.get(t.product) || { revenue: 0, orders: 0, delivered: 0, returned: 0 };
       e.orders++;
-      if (t.statusCategory === 'delivered') e.revenue += t.total;
+      if (t.statusCategory === 'delivered') { e.revenue += t.total; e.delivered++; }
       if (t.statusCategory === 'returned') e.returned++;
       map.set(t.product, e);
     });
@@ -415,7 +412,7 @@ export function getYearlyTopProducts(tracking: TrackingOrder[], year: number, li
       revenue: d.revenue,
       orders: d.orders,
       returned: d.returned,
-      deliveryRate: d.orders > 0 ? ((d.orders - d.returned) / d.orders) * 100 : 0,
+      deliveryRate: d.delivered + d.returned > 0 ? (d.delivered / (d.delivered + d.returned)) * 100 : 0,
     }))
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, limit);

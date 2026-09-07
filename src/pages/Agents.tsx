@@ -6,7 +6,6 @@ import { Badge } from '@/components/ui/badge';
 import { DonutChart } from '@/components/charts/DonutChart';
 import { BarChart } from '@/components/charts/BarChart';
 import { LineChart } from '@/components/charts/LineChart';
-import { StatusBadge } from '@/components/shared/StatusBadge';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/utils';
 import { Star, ThumbsUp, AlertTriangle, Flame } from 'lucide-react';
 import { getAgentDataTracking, getAgentDailyStats, getAgentLast7Days, getAgentDailyVsMonthlyAvg } from '@/lib/dashboardMetrics';

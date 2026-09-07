@@ -19,7 +19,7 @@ function pctChange(current: number, previous: number): number {
 }
 
 export function DailyTrends({ trackingOrders }: DailyTrendsProps) {
-  const { snapshots, todayMetrics, delta, ma7, ma30, todaySaved, saveToday } = useDailyHistory(trackingOrders);
+  const { snapshots, todayMetrics, delta, todaySaved, saveToday } = useDailyHistory(trackingOrders);
 
   const last30Snapshots = useMemo(() => {
     const sorted = [...snapshots].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -68,6 +68,7 @@ export function DailyTrends({ trackingOrders }: DailyTrendsProps) {
 
   return (
     <div className="space-y-6">
+      <p className="text-sm text-[var(--color-text-muted)]">السجل محفوظ في هذا المتصفح. الحفظ الآلي بعد 22:00 يتطلب بقاء الصفحة مفتوحة؛ الأيام المفقودة لا تعني صفراً.</p>
       <h1 className="text-xl font-bold">الاتجاهات اليومية</h1>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">

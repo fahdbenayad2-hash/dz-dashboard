@@ -1,32 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import type { TrackingOrder } from '@/types';
 import { fetchTracking } from '@/lib/sheetsApi';
-
+import { useRemoteData } from './useRemoteData';
 export function useTrackingData() {
-  const [trackingOrders, setTrackingOrders] = useState<TrackingOrder[]>([]);
-  const [trackingLoading, setTrackingLoading] = useState(true);
-  const initialLoadDone = useRef(false);
-
-  const load = useCallback(async (showLoading = false) => {
-    if (showLoading) setTrackingLoading(true);
-    try {
-      const data = await fetchTracking();
-      setTrackingOrders(data);
-    } catch {
-      // silent
-    } finally {
-      setTrackingLoading(false);
-      initialLoadDone.current = true;
-    }
-  }, []);
-
-  useEffect(() => {
-    load(true);
-    const interval = setInterval(() => load(false), 60000);
-    return () => clearInterval(interval);
-  }, [load]);
-
-  const refresh = useCallback(() => load(false), [load]);
-
-  return { trackingOrders, trackingLoading, refresh };
+  const { data: trackingOrders, loading: trackingLoading, ...state } = useRemoteData(fetchTracking);
+  return { trackingOrders, trackingLoading, ...state };
 }

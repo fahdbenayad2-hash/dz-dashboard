@@ -7,7 +7,6 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { RiskMeter } from '@/components/shared/RiskMeter';
 import { calculatePricing } from '@/lib/financialEngine';
 import { getRiskDetail, calculatePortfolioRisk } from '@/lib/riskScore';
-import { formatCurrency } from '@/lib/utils';
 
 function makePricingInputs(product: string, tracking: TrackingOrder[]): PricingInputs {
   const productOrders = tracking.filter(t => t.product === product);

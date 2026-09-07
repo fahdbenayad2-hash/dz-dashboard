@@ -9,7 +9,7 @@ import { LineChart } from '@/components/charts/LineChart';
 import { BarChart } from '@/components/charts/BarChart';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import { analyzeProductPeriod, buildFinancialAnalysis, buildWilayaAnalysis, buildCompetitiveAnalysis } from '@/lib/financialEngine';
-import { TrendingUp, TrendingDown, AlertTriangle, Minus, DollarSign, BarChart3, Target, Shield, ChevronUp, ChevronDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, DollarSign, BarChart3, Target, Shield, ChevronUp, ChevronDown } from 'lucide-react';
 
 function defaultDates() {
   const to   = new Date();

@@ -9,7 +9,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { RiskMeter } from '@/components/shared/RiskMeter';
 import { usePricing } from '@/hooks/usePricing';
 import { formatCurrency, formatPercent } from '@/lib/utils';
-import { Copy, RotateCcw, Package, TrendingDown, TrendingUp, Trophy } from 'lucide-react';
+import { Copy, RotateCcw, Trophy } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { isValidDate } from '@/lib/dashboardMetrics';
 
@@ -189,7 +189,6 @@ export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }
                 </TableHeader>
                 <TableBody>
                   {filtered.map(p => {
-                    const rateColor = p.deliveryRate >= 65 ? 'text-[var(--color-success)]' : p.deliveryRate >= 50 ? 'text-[var(--color-warning)]' : 'text-[var(--color-danger)]';
                     const badgeVariant = p.deliveryRate >= 65 ? 'success' : p.deliveryRate >= 50 ? 'warning' as const : 'danger' as const;
                     return (
                       <TableRow

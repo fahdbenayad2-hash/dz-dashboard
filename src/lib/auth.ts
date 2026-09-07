@@ -1,46 +1,23 @@
-const STORAGE_KEY = 'dz_dashboard_auth';
-const SESSION_DURATION = 24 * 60 * 60 * 1000;
-
-interface AuthSession {
-  authenticated: true;
-  expiresAt: number;
-}
-
-export function isAuthenticated(): boolean {
+import { resetDataCache } from './sheetsApi';
+let active = false;
+export function isAuthenticated(): boolean { return active; }
+export async function checkSession(): Promise<boolean> {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return false;
-    const session: AuthSession = JSON.parse(raw);
-    if (Date.now() > session.expiresAt) {
-      sessionStorage.removeItem(STORAGE_KEY);
-      return false;
-    }
-    console.log('[DZ-CHANGE] auth-session-active');
-    return true;
-  } catch {
-    return false;
-  }
+    const response = await fetch('/api/session', { cache: 'no-store', credentials: 'same-origin', signal: AbortSignal.timeout(15000) });
+    active = response.ok && (await response.json()).authenticated === true;
+  } catch { active = false; }
+  return active;
 }
-
-export function login(password: string): boolean {
-  const PASSWORD = import.meta.env.VITE_DASHBOARD_PASSWORD;
-  const success = password === PASSWORD;
-  if (success) {
-    const session: AuthSession = {
-      authenticated: true,
-      expiresAt: Date.now() + SESSION_DURATION,
-    };
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-    console.log('[DZ-AUTH] login-success');
-    console.log('[DZ-CHANGE] auth-session-active');
-  } else {
-    console.log('[DZ-AUTH] login-failed');
-  }
-  return success;
+export async function login(password: string): Promise<boolean> {
+  const response = await fetch('/api/session', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }), signal: AbortSignal.timeout(15000) });
+  if (response.status === 503) throw new Error('خدمة الدخول تحتاج إعداداً على الخادم.');
+  if (!response.ok && response.status !== 401) throw new Error('تعذّر الاتصال بخدمة الدخول.');
+  active = response.ok;
+  return active;
 }
-
-export function logout(): void {
-  sessionStorage.removeItem(STORAGE_KEY);
-  console.log('[DZ-AUTH] logout');
-  console.log('[DZ-CHANGE] logout');
+export async function logout(): Promise<void> {
+  const response = await fetch('/api/session', { method: 'DELETE', credentials: 'same-origin', signal: AbortSignal.timeout(15000) });
+  if (!response.ok) throw new Error('تعذّر إنهاء الجلسة. أعد المحاولة.');
+  active = false;
+  resetDataCache();
 }

@@ -25,6 +25,7 @@ export function KPICard({ icon, label, value, change, changeLabel, color }: KPIC
         <div className="space-y-1.5 min-w-0 flex-1">
           <p className="text-xs font-medium text-[var(--color-text-muted)] line-clamp-2 break-words">{label}</p>
           <p className={`${valueSize} font-bold tabular-nums text-[var(--color-text)]`} title={value}>{value}</p>
+          {change === undefined && changeLabel && <p className="text-xs text-[var(--color-text-muted)]">{changeLabel}</p>}
           {change !== undefined && (
             <div className="flex items-center gap-1.5 text-xs">
               <span className={classNames(
@@ -42,7 +43,7 @@ export function KPICard({ icon, label, value, change, changeLabel, color }: KPIC
         </div>
         <div
           className="rounded-xl p-3.5 shrink-0"
-          style={{ backgroundColor: color ? `${color}15` : 'var(--color-primary)' }}
+          style={{ backgroundColor: color ? `${color}15` : 'color-mix(in srgb, var(--color-primary) 15%, transparent)' }}
         >
           <div className="flex items-center justify-center" style={{ color: color || 'var(--color-primary)' }}>
             {icon}

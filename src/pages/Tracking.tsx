@@ -6,7 +6,7 @@ import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { formatCurrency, formatNumber } from '@/lib/utils';
-import { getTrackingMetrics, getTrackingStatusDistribution } from '@/lib/dashboardMetrics';
+import { getTrackingMetrics } from '@/lib/dashboardMetrics';
 import { Truck, CheckCircle, XCircle, Clock, HelpCircle } from 'lucide-react';
 
 const categoryConfig: Record<string, { label: string; variant: 'success' | 'danger' | 'warning' | 'default' | 'outline'; icon: typeof Truck }> = {
@@ -24,7 +24,6 @@ export function Tracking({ trackingOrders }: { trackingOrders: TrackingOrder[] }
   const perPage = 25;
 
   const stats = useMemo(() => getTrackingMetrics(trackingOrders), [trackingOrders]);
-  const statusDist = useMemo(() => getTrackingStatusDistribution(trackingOrders), [trackingOrders]);
 
   const filtered = useMemo(() => {
     let list = [...trackingOrders];

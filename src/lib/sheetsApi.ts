@@ -1,25 +1,35 @@
-import type { Order, OrderStatus, TrackingOrder, StatusCategory } from '@/types';
+import type { Order, OrderStatus, TrackingOrder } from '@/types';
 
-const SHEET_ID = '1WjloEKAQGJA2Z6vgnhni7aByN4ktmPc0xP7EvAUaMUw';
+import { classifyTrackingStatus } from './status';
+export { classifyTrackingStatus } from './status';
 
-function fetchSheet(sheetName: string): Promise<{ c: { v: unknown; f?: string }[] | null }[]> {
-  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${sheetName}&headers=1`;
-  return fetch(url)
-    .then(r => r.text())
-    .then(text => {
-      const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\)/);
-      if (!match) throw new Error('Failed to parse Google Sheets response');
-      const response = JSON.parse(match[1]);
-      if (response.status === 'error') throw new Error(response.errors?.[0]?.message || 'Sheet API error');
-      const rows = response.table.rows || [];
-      console.log(`[DZ-SHEET] ${sheetName}: ${rows.length} rows returned`);
-      if (rows.length > 0) console.log(`[DZ-SHEET] ${sheetName} first row sample:`, rows[0]);
-      return rows;
-    });
+type SheetRows = { c: { v: unknown; f?: string }[] | null }[];
+type PublishedData = { Orders: SheetRows; Tracking: SheetRows; generation: string; completedAt: string };
+let pending: Promise<PublishedData> | null = null;
+let validUntil = 0;
+export function resetDataCache() { pending = null; validUntil = 0; }
+export function readPublishedData(): Promise<PublishedData> {
+  if (pending && Date.now() < validUntil) return pending;
+  validUntil = Date.now() + 30000;
+  const request = fetch('/api/data', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(30000) })
+    .then(async response => {
+      if (!response.ok) throw new Error('Sheet request failed');
+      const data = await response.json();
+      if (!Array.isArray(data.Orders) || !Array.isArray(data.Tracking) || typeof data.generation !== 'string' || typeof data.completedAt !== 'string') throw new Error('Invalid sheet response');
+      validUntil = Date.now() + 2000;
+      return data as PublishedData;
+    }).catch(error => { if (pending === request) resetDataCache(); throw error; });
+  pending = request;
+  return request;
+}
+async function fetchSheet(sheetName: 'Orders' | 'Tracking', signal?: AbortSignal): Promise<SheetRows> {
+  const data = await readPublishedData();
+  signal?.throwIfAborted();
+  return data[sheetName];
 }
 
-export async function fetchOrders(): Promise<Order[]> {
-  const rows = await fetchSheet('Orders');
+export async function fetchOrders(signal?: AbortSignal): Promise<Order[]> {
+  const rows = await fetchSheet('Orders', signal);
   return rows
     .reduce((acc: Order[], row: { c: { v: unknown; f?: string }[] | null }) => {
       const cells = row.c;
@@ -42,22 +52,8 @@ export async function fetchOrders(): Promise<Order[]> {
     }, []);
 }
 
-export function classifyTrackingStatus(status: string): StatusCategory {
-  const s = (status || '').toString().trim().toLowerCase();
-  const delivered = ['livré', 'livre', 'livrée', 'delivered', 'مسلم', 'تم التسليم'];
-  const returned = ['retour', 'retourné', 'retournée', 'colis retourné', 'refus', 'refusé', 'refused', 'رجع', 'مرجع', 'إرجاع', 'annulé', 'ملغى', 'ملغي'];
-  const transit = ['en transit', 'transit', 'في الطريق', 'vers', 'expédié', 'en cours', 'sorti', 'en route'];
-  const delivery = ['en livraison', 'livraison', 'ramassé', 'en cours de livraison', 'camion', 'centre', 'توزيع', 'out for delivery', 'قيد التوزيع', 'prêt', 'en attente de ramassage'];
-
-  if (delivered.some(w => s.includes(w))) return 'delivered';
-  if (returned.some(w => s.includes(w))) return 'returned';
-  if (transit.some(w => s.includes(w))) return 'transit';
-  if (delivery.some(w => s.includes(w))) return 'delivery';
-  return 'others';
-}
-
-export async function fetchTracking(): Promise<TrackingOrder[]> {
-  const rows = await fetchSheet('Tracking');
+export async function fetchTracking(signal?: AbortSignal): Promise<TrackingOrder[]> {
+  const rows = await fetchSheet('Tracking', signal);
   return rows
     .reduce((acc: TrackingOrder[], row: { c: { v: unknown; f?: string }[] | null }) => {
       const cells = row.c;
@@ -69,13 +65,6 @@ export async function fetchTracking(): Promise<TrackingOrder[]> {
       const rawDate = String(cells[1]?.f || cells[1]?.v || '');
       const parsedDate = rawDate ? new Date(rawDate) : null;
       const date = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null;
-      console.log('[DZ-CHANGE] Tracking parsed sample:', {
-        orderId: String(cells[0]?.v || ''),
-        status: String(cells[5]?.v || ''),
-        date: String(cells[1]?.f || cells[1]?.v || ''),
-        total: Number(cells[7]?.v) || 0,
-        wilaya: String(cells[4]?.v || ''),
-      });
       acc.push({
         orderId,
         date,

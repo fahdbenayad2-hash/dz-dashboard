@@ -48,7 +48,6 @@ describe('storageManager', () => {
     const metaKey = STORAGE_KEY + '_meta';
     const metaRaw = mockStorage.store[metaKey];
     if (metaRaw) {
-      const meta = JSON.parse(metaRaw);
       const snapKey = STORAGE_KEY + '_' + snap.id;
       if (mockStorage.store[snapKey]) {
         const snapData = JSON.parse(mockStorage.store[snapKey]);
@@ -63,4 +62,27 @@ describe('storageManager', () => {
 
     clearAllSnapshots();
   });
+});
+
+it('updates a daily snapshot without duplicating the day', async () => {
+  const { addSnapshot, getAllSnapshots } = await import('../storageManager');
+  addSnapshot({ date: '2026-09-07', totalOrders: 2 });
+  addSnapshot({ date: '2026-09-07', totalOrders: 3 });
+  const snapshots = getAllSnapshots();
+  expect(snapshots).toHaveLength(1);
+  expect(snapshots[0].data).toEqual({ date: '2026-09-07', totalOrders: 3 });
+});
+it('recovers from quota pressure by evicting only owned old snapshots', async () => {
+  const { addSnapshot, getAllSnapshots } = await import('../storageManager');
+  addSnapshot({ date: '2026-09-06' });
+  mockStorage.setItem('unrelated-user-data', 'keep');
+  const original = mockStorage.setItem.getMockImplementation()!;
+  let failed = false;
+  mockStorage.setItem.mockImplementation((key: string, value: string) => {
+    if (!failed && key.endsWith('day_2026-09-07')) { failed = true; throw new DOMException('full', 'QuotaExceededError'); }
+    original(key, value);
+  });
+  addSnapshot({ date: '2026-09-07' });
+  expect(getAllSnapshots()).toHaveLength(1);
+  expect(mockStorage.getItem('unrelated-user-data')).toBe('keep');
 });

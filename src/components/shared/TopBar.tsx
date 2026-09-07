@@ -1,6 +1,7 @@
 import { RefreshCw, Moon, Sun, Clock, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
+import { classNames } from '@/lib/utils';
 
 interface TopBarProps {
   dark: boolean;
@@ -30,13 +31,13 @@ export function TopBar({ dark, onToggleDark, lastUpdated, onRefresh, loading, on
         </span>
         <span className="flex items-center gap-1.5 rounded-full bg-[var(--color-success)]/10 px-2.5 py-0.5 text-xs font-medium text-[var(--color-success)]">
           <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success)] animate-pulse" />
-          مباشر
+          Google Sheets
         </span>
       </div>
 
       <div className="flex items-center gap-3">
         {lastUpdated && (
-          <Tooltip content={`آخر تحديث: ${lastUpdated.toLocaleString('ar-DZ')}`}>
+          <Tooltip content={`آخر قراءة للمصدرين: ${lastUpdated.toLocaleString('ar-DZ')}`}>
             <span className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] tabular-nums">
               <Clock className="h-3.5 w-3.5" />
               {formatTime(lastUpdated)}
@@ -60,8 +61,4 @@ export function TopBar({ dark, onToggleDark, lastUpdated, onRefresh, loading, on
       </div>
     </header>
   );
-}
-
-export function classNames(...classes: (string | boolean | undefined | null)[]): string {
-  return classes.filter(Boolean).join(' ');
 }
