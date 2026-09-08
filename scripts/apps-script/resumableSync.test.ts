@@ -10,25 +10,25 @@ describe('resumable synchronization invariants', () => {
     expect(c.page(data, 0, 0, 2, 'page', null).cursor).toBe(1);
     expect(c.page(data, 0, 0, 2, 'page', null).done).toBe(false);
   });
-  it('never publishes an empty/malformed response as a completed partial run', () => {
+  it('rejects malformed responses and accepts an empty final page', () => {
     const c = core();
     expect(() => c.page(null, 1, 2, 2, 'page', 4)).toThrow();
-    expect(() => c.page({ data: [] }, 1, 2, 2, 'page', 4)).toThrow('PREMATURE_END');
+    expect(c.page({ data: [], all_count: 4 }, 2, 4, 2, 'page', 4).done).toBe(true);
   });
-  it('rejects moving totals and overflowing page counts', () => {
+  it('accepts source growth but rejects shrinkage', () => {
     const c = core();
-    expect(() => c.page({ data: [{}], all_count: 5 }, 1, 2, 2, 'page', 4)).toThrow();
-    expect(() => c.page({ data: [{}, {}], all_count: 3 }, 1, 2, 2, 'page', 3)).toThrow();
+    expect(c.page({ data: [{}], all_count: 5 }, 1, 2, 2, 'page', 4).expected).toBe(5);
+    expect(() => c.page({ data: [{}], all_count: 3 }, 1, 2, 2, 'page', 4)).toThrow('SOURCE_SHRANK');
   });
-  it('completes only at validated total or short page', () => {
+  it('completes only at a short final page', () => {
     const c = core();
-    expect(c.page({ data: [{}, {}], all_count: 4 }, 1, 2, 2, 'page', 4).done).toBe(true);
+    expect(c.page({ data: [{}, {}], all_count: 4 }, 1, 2, 2, 'page', 4).done).toBe(false);
     expect(c.page({ data: [{}] }, 1, 2, 2, 'page', null).done).toBe(true);
   });
-  it('preserves archives but rejects duplicate source order IDs', () => {
+  it('preserves archives and keeps the newest copy of shifted source IDs', () => {
     const c = core();
     expect(c.merge([[2, 'fresh']], [[2, 'archive'], [1, 'old']]).map((r: unknown[]) => r[1])).toEqual(['fresh', 'old']);
-    expect(() => c.merge([[2], [2]], [])).toThrow('DUPLICATE_SOURCE_ID');
+    expect(c.merge([[2, 'newest'], [2, 'shifted']], [])).toEqual([[2, 'newest']]);
   });
   it('retains all product fields without assigning a basket to its first item', () => {
     const items = [{ product: { name: 'A' }, quantity: 2 }, { product: { name: 'B' }, quantity: 3 }];
@@ -87,7 +87,7 @@ function harness(timeoutDuringSetup = false) {
       cursors.push(params.offset); if (fail) throw new Error('Network');
       if (slow) clock += 130000;
       const order = { id: params.offset + 1, order_total: 100 };
-      return { all_count: 2, data: [endpoint === 'orders' ? order : { order }] };
+      return { all_count: 2, data: params.offset >= 2 ? [] : [endpoint === 'orders' ? order : { order }] };
     },
     Sheets: { Spreadsheets: { batchUpdate: () => { publications++; } } },
   };

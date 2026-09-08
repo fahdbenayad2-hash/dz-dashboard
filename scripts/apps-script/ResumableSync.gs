@@ -24,11 +24,11 @@ function dzPageProgress_(data, cursor, received, limit, mode, expected) {
   if (!data || !Array.isArray(data.data) || data.data.length > limit) throw new Error('INVALID_PAGE');
   var total = data.all_count === undefined || data.all_count === null ? null : Number(data.all_count);
   if (total !== null && (!Number.isInteger(total) || total < 0)) throw new Error('INVALID_COUNT');
-  if (expected !== null && total !== null && expected !== total) throw new Error('SOURCE_CHANGED_RESTART_REQUIRED');
+  if (expected !== null && total !== null && total < expected) throw new Error('SOURCE_SHRANK_RESTART_REQUIRED');
+  if (expected !== null && total !== null && total > expected) expected = total;
   if (expected === null) expected = total;
   var count = received + data.data.length;
-  if (expected !== null && count > expected) throw new Error('COUNT_OVERFLOW');
-  var done = expected !== null ? count === expected : data.data.length < limit;
+  var done = data.data.length < limit;
   if (!done && data.data.length === 0) throw new Error('PREMATURE_END');
   return { cursor: cursor + (mode === 'page' ? 1 : data.data.length), received: count, expected: expected, done: done };
 }
@@ -56,7 +56,10 @@ function dzMergeRows_(fresh, archive) {
   var seen = Object.create(null), merged = [];
   fresh.forEach(function (row) {
     var id = String(row[0]);
-    if (!id || seen[id]) throw new Error('DUPLICATE_SOURCE_ID');
+    if (!id) throw new Error('MISSING_SOURCE_ID');
+    // New records can shift page boundaries during a long run. Keep the first
+    // occurrence (the newest snapshot) and continue until the short final page.
+    if (seen[id]) return;
     seen[id] = true; merged.push(row);
   });
   archive.forEach(function (row) {
