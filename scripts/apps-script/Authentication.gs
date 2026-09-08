@@ -67,6 +67,18 @@ function octoToken_(rejectedToken) {
   } finally { lock.releaseLock(); }
 }
 
+// Run manually after configuring automatic login. Logs status only, never credentials.
+function dzVerifyOctoRenewal() {
+  var props = PropertiesService.getScriptProperties();
+  var before = octoNormalizedToken_(props.getProperty('JWT_TOKEN'));
+  if (!before) throw new Error('AUTH_REQUIRED: missing current token');
+  var after = octoToken_(before);
+  if (!after || after === before) throw new Error('AUTH_RENEWAL_NOT_CONFIRMED');
+  var result = apiGet_('/tenants/api/orders', { offset: 0, limit: 1 });
+  if (!result || !Array.isArray(result.data)) throw new Error('AUTH_VERIFICATION_FAILED');
+  console.log('AUTH_RENEWAL_OK');
+}
+
 function apiGet_(endpoint, params) {
   // Only the two audited read endpoints are permitted by this adapter.
   if (endpoint !== '/tenants/api/orders' && endpoint !== '/tenants/api/tracking-order') throw new Error('UNSUPPORTED_ENDPOINT');

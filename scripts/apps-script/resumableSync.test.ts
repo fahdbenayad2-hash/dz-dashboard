@@ -45,7 +45,7 @@ describe('resumable synchronization invariants', () => {
 
 function harness(timeoutDuringSetup = false) {
   let clock = Date.now(), nextId = 1;
-  const properties: Record<string, string> = { DZ_PAGINATION_MODE: 'page' };
+  const properties: Record<string, string> = { DZ_PAGINATION_MODE: 'page', DZ_TARGET_PREFIX: 'production' };
   const sheets = new Map<number, FakeSheet>();
   class FakeSheet {
     id = nextId++; rows: unknown[][] = []; maxRows = 1000;

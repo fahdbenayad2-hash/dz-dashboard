@@ -122,8 +122,9 @@ function dzSyncTick() {
   var props = PropertiesService.getScriptProperties();
   var mode = props.getProperty('DZ_PAGINATION_MODE');
   if (mode !== 'page' && mode !== 'offset') throw new Error('VERIFY_PAGINATION_MODE_FIRST');
-  var targetPrefix = props.getProperty('DZ_TARGET_PREFIX') || '';
-  if (targetPrefix !== '' && targetPrefix !== '_dz_test_') throw new Error('INVALID_TARGET_PREFIX');
+  var targetMode = props.getProperty('DZ_TARGET_PREFIX') || 'production';
+  if (targetMode !== 'production' && targetMode !== '_dz_test_') throw new Error('INVALID_TARGET_PREFIX');
+  var targetPrefix = targetMode === 'production' ? '' : targetMode;
   // Document lock is distinct from Authentication.gs script lock.
   var lock = LockService.getDocumentLock();
   if (!lock || !lock.tryLock(1000)) throw new Error('SYNC_BUSY_OR_NOT_BOUND');

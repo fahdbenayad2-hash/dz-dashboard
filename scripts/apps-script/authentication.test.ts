@@ -11,15 +11,17 @@ function setup(auto = true) {
   ]);
   const fetch = vi.fn();
   const releaseLock = vi.fn();
+  const log = vi.fn();
   const context = {
     CONFIG: { BASE_URL: 'https://test.leaderscod.com' }, getXAuth: () => 'test-key',
     PropertiesService: { getScriptProperties: () => ({ getProperty: (key: string) => properties.get(key), setProperty: (key: string, value: string) => properties.set(key, value) }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock }) },
     UrlFetchApp: { fetch },
     Utilities: { sleep: vi.fn(), base64DecodeWebSafe: (text: string) => Buffer.from(text, 'base64url'), newBlob: (bytes: Buffer) => ({ getDataAsString: () => bytes.toString() }) },
+    console: { log },
   };
   runInNewContext(source, context);
-  return { properties, fetch, releaseLock, api: context as typeof context & { apiGet_: (path: string) => unknown; octoToken_: (rejected?: string) => string } };
+  return { properties, fetch, releaseLock, log, api: context as typeof context & { apiGet_: (path: string) => unknown; octoToken_: (rejected?: string) => string; dzVerifyOctoRenewal: () => void } };
 }
 const response = (code: number, body: unknown = {}) => ({ getResponseCode: () => code, getContentText: () => JSON.stringify(body), getHeaders: () => ({}) });
 const login = (token: string, domain = 'test.leaderscod.com') => response(200, { token, data: { tenant: { stores: [{ store_name: 'test', domain }] } } });
@@ -46,6 +48,16 @@ describe('Apps Script auth adapter (mocked services only)', () => {
     expect(test.properties.get('JWT_TOKEN')).toBe(next);
     expect(test.fetch.mock.calls[1][0]).toBe('https://test.leaderscod.com/tenants/api/me');
     expect(test.releaseLock).toHaveBeenCalledOnce();
+  });
+  it('performs a controlled end-to-end renewal check without logging credentials', () => {
+    const test = setup();
+    const current = jwt(24);
+    const next = jwt(720);
+    test.properties.set('JWT_TOKEN', `Bearer ${current}`);
+    test.fetch.mockReturnValueOnce(login(next)).mockReturnValueOnce(response(200)).mockReturnValueOnce(response(200, { data: [] }));
+    test.api.dzVerifyOctoRenewal();
+    expect(test.properties.get('JWT_TOKEN')).toBe(next);
+    expect(test.log).toHaveBeenCalledWith('AUTH_RENEWAL_OK');
   });
   it('never sends a renewed credential to a domain returned unexpectedly', () => {
     const test = setup();
