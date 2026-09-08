@@ -37,7 +37,7 @@
 1. إعداد مزامنة ResumableSync على نسخة اختبار وإثبات pagination قبل تشغيلها على المصدر الحقيقي.
 2. وجود SyncStatus لجيل مكتمل قبل تفعيل /api/data الجديد؛ لا تزور metadata على البيانات القديمة.
 3. اختبار وصول الخادم بالشيت وصلاحيات جلسة الدخول.
-4. نشر النسخة الجديدة ثم إغلاق المشاركة العامة للشيت بعد نجاح القراءة الخاصة. المشاركة العامة الحالية مازالت كما كانت.
+4. اكتمل: أُغلقت المشاركة العامة للشيت يوم 2026-09-08، وبقي المالك وحساب الخدمة القارئ فقط. أُعيد تحميل الموقع بعد التغيير وتأكد استمرار القراءة الخاصة عبر WIF.
 5. ضبط rate limit لمسار POST /api/session عبر Vercel Firewall قبل نشره للعامة.
 
 المراجع: [Vercel GCP OIDC](https://vercel.com/docs/oidc/gcp)، [Vercel request identity](https://vercel.com/docs/oidc/reference)، [Google STS](https://docs.cloud.google.com/iam/docs/reference/sts/rest/v1/TopLevel/token).

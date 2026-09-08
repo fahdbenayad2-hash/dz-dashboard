@@ -1,10 +1,9 @@
 # Octomatic authentication adapter
 
-The adapter is covered by mocked tests. On 2026-09-08 its manual-token path was
-installed in the live Apps Script and verified with the read-only pagination
-diagnostic. The login request and token response shape were observed in the public
-Octomatic frontend; a real automatic renewal still requires a controlled credential
-test and may be blocked by CAPTCHA or OTP.
+The adapter is covered by mocked tests. On 2026-09-08 it was installed in the live
+Apps Script, automatic login was enabled in private Script Properties, and a forced
+renewal plus a read request completed with `AUTH_RENEWAL_OK`. CAPTCHA, OTP, a disabled
+account, or a provider API change can still require a manual reconnection.
 
 Automatic-mode setup after a controlled account test:
 
@@ -34,12 +33,13 @@ the entire synchronization pipeline has been repaired.
 
 ## Resumable synchronization (installed and promoted)
 
-On 2026-09-08 the validated shadow generation was atomically promoted to production:
-9,412 Orders and 16,386 Tracking rows with no blank or duplicate IDs in either
-published target. `SyncStatus` records the completed generation. Advanced Sheets v4
-is enabled. Initialization checkpoints each stage and reuses deterministic staging
-names after uncertain timeouts. Review `DZ_SYNC_STATE` before resuming; do not reset
-it blindly. The module rejects target changes during an unfinished run.
+On 2026-09-08 the validated shadow generation was atomically promoted to production.
+After enabling the hourly `dzSyncTick` trigger, a fresh production generation then
+published 9,456 Orders and 16,423 Tracking rows. `SyncStatus` records the completed
+generation, `DZ_SYNC_STATE` was cleared, and the prior error state was removed.
+Advanced Sheets v4 is enabled. Initialization checkpoints each stage and reuses
+deterministic staging names after uncertain timeouts. Review `DZ_SYNC_STATE` before
+resuming; do not reset it blindly.
 
 Live diagnostic on 2026-09-07: added and ran `PaginationDiagnostic.gs` with
 `dzCheckPagination` in the existing bound project. Five small read requests per
