@@ -13,6 +13,6 @@ export function classifyTrackingStatus(status: string): 'delivered' | 'returned'
   if (['livré', 'livre', 'livrée', 'colis livré', 'delivered', 'مسلم', 'تم التسليم', 'تم التوصيل'].includes(s)) return 'delivered';
   if (/^(retour|retourné|retournée|colis retourné|refus|refusé|refused|رجع|مرجع|إرجاع|annulé|ملغى|ملغي)(\s|$)/.test(s)) return 'returned';
   if (['en livraison', 'en cours de livraison', 'out for delivery', 'قيد التوزيع', 'توزيع'].includes(s) || /^(tentative de livraison)(\s|\(|$)/.test(s)) return 'delivery';
-  if (['en transit', 'transit', 'في الطريق', 'expédié', 'en route', 'ramassé', 'colis ramassé'].includes(s) || /^(en traitement)(\s|\(|$)/.test(s)) return 'transit';
+  if (['en transit', 'transit', 'في الطريق', 'expédié', 'en route', 'ramassé', 'colis ramassé'].includes(s) || /^(en traitement|enlev[eé] par le livreur)(\s|\(|$)/.test(s)) return 'transit';
   return 'others';
 }

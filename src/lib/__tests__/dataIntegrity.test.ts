@@ -25,6 +25,7 @@ describe('data integrity regressions', () => {
     expect(classifyTrackingStatus('En cours de livraison')).toBe('delivery');
     expect(classifyTrackingStatus('Colis Ramassé')).toBe('transit');
     expect(classifyTrackingStatus('En Traitement (Centre)')).toBe('transit');
+    expect(classifyTrackingStatus('Enlevé par le livreur')).toBe('transit');
     expect(classifyTrackingStatus('Tentative de livraison (1)')).toBe('delivery');
     expect(normalizeStatus('Confirmed')).toBe('Confirmed');
     expect(normalizeStatus('مؤكدة')).toBe('Confirmed');
