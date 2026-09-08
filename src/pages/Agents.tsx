@@ -9,6 +9,7 @@ import { LineChart } from '@/components/charts/LineChart';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/utils';
 import { Star, ThumbsUp, AlertTriangle, Flame } from 'lucide-react';
 import { getAgentDataTracking, getAgentDailyStats, getAgentLast7Days, getAgentDailyVsMonthlyAvg } from '@/lib/dashboardMetrics';
+import { businessDate } from '@/lib/businessDate';
 
 function useAgentData(trackingOrders: TrackingOrder[]) {
   return useMemo(() => {
@@ -54,10 +55,10 @@ export function Agents({ orders, trackingOrders }: { orders: Order[]; trackingOr
     const last30Days = [...Array(30)].map((_, i) => {
       const d = new Date();
       d.setDate(d.getDate() - (29 - i));
-      return d.toISOString().slice(0, 10);
+      return businessDate(d);
     });
     const dailyCounts = last30Days.map(day =>
-      agentTrackingOrders.filter(t => t.date && t.date.toISOString().slice(0, 10) === day).length
+      agentTrackingOrders.filter(t => t.date && businessDate(t.date) === day).length
     );
 
     const wilayaMap = new Map<string, number>();
@@ -84,7 +85,7 @@ export function Agents({ orders, trackingOrders }: { orders: Order[]; trackingOr
                   <TableHead>المؤكدة</TableHead>
                   <TableHead>الفاشلة</TableHead>
                   <TableHead>معدل الإلغاء</TableHead>
-                  <TableHead>الإيراد</TableHead>
+                  <TableHead>إيراد المسلّم</TableHead>
                   <TableHead>متوسط الطلب</TableHead>
                   <TableHead>الأداء</TableHead>
                 </TableRow>
@@ -112,7 +113,7 @@ export function Agents({ orders, trackingOrders }: { orders: Order[]; trackingOr
                           {formatPercent(a.cancellationRate)}
                         </span>
                       </TableCell>
-                      <TableCell className="tabular-nums">{formatCurrency(a.totalRevenue)}</TableCell>
+                      <TableCell className="tabular-nums">{formatCurrency(a.deliveredRevenue)}</TableCell>
                       <TableCell className="tabular-nums">{formatCurrency(a.avgOrderValue)}</TableCell>
                       <TableCell>
                         <span className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: cfg.color }}>
@@ -225,7 +226,7 @@ export function Agents({ orders, trackingOrders }: { orders: Order[]; trackingOr
 
       {/* ─── FEAT-5: المتابعة اليومية ─── */}
       {(() => {
-        const todayKey = new Date().toISOString().slice(0, 10);
+        const todayKey = businessDate(new Date());
         const todayStats = getAgentDailyStats(trackingOrders, todayKey);
         const last7Days = getAgentLast7Days(trackingOrders);
         return (

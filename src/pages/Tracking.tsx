@@ -52,7 +52,7 @@ export function Tracking({ trackingOrders }: { trackingOrders: TrackingOrder[] }
   return (
     <div className="space-y-6">
       {/* Summary Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
         <Card><CardContent className="p-4 text-center">
           <p className="text-xs text-[var(--color-text-muted)]">الإجمالي</p>
           <p className="text-xl font-bold tabular-nums">{formatNumber(stats.total)}</p>
@@ -72,6 +72,11 @@ export function Tracking({ trackingOrders }: { trackingOrders: TrackingOrder[] }
         <Card><CardContent className="p-4 text-center">
           <p className="text-xs text-[var(--color-text-muted)]" style={{ color: '#378ADD' }}>جاري التوزيع</p>
           <p className="text-xl font-bold tabular-nums" style={{ color: '#378ADD' }}>{formatNumber(stats.inDelivery)}</p>
+        </CardContent></Card>
+        <Card><CardContent className="p-4 text-center">
+          <p className="text-xs text-[var(--color-text-muted)]">غير مصنّف</p>
+          <p className="text-xl font-bold tabular-nums" style={{ color: '#EF9F27' }}>{formatNumber(stats.others)}</p>
+          <p className="text-[11px] text-[var(--color-text-muted)]">{stats.total > 0 ? (stats.others / stats.total * 100).toFixed(1) : '0.0'}%</p>
         </CardContent></Card>
         <Card><CardContent className="p-4 text-center">
           <p className="text-xs text-[var(--color-text-muted)]">صافي الإيراد</p>
@@ -97,7 +102,7 @@ export function Tracking({ trackingOrders }: { trackingOrders: TrackingOrder[] }
                 <option value="returned">مرتجع</option>
                 <option value="transit">قيد التوصيل</option>
                 <option value="delivery">جاري التوزيع</option>
-                <option value="others">أخرى</option>
+                <option value="others">غير مصنّف / أخرى</option>
               </Select>
             </div>
           </div>
@@ -131,11 +136,14 @@ export function Tracking({ trackingOrders }: { trackingOrders: TrackingOrder[] }
                       <TableCell>{t.customer}</TableCell>
                       <TableCell>{t.wilaya}</TableCell>
                       <TableCell>
-                        <span className="inline-flex items-center gap-1">
+                        <span className="inline-flex flex-col items-start gap-1">
                           <Badge variant={cfg.variant}>
                             <Icon className="h-3 w-3 ml-1" />
                             {cfg.label}
                           </Badge>
+                          <span className="max-w-48 truncate text-[11px] text-[var(--color-text-muted)]" title={t.trackingStatus}>
+                            {t.trackingStatus || 'بدون حالة خام'}
+                          </span>
                         </span>
                       </TableCell>
                       <TableCell className="max-w-40 truncate">{t.product}</TableCell>

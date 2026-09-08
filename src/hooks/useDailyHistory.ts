@@ -92,17 +92,23 @@ export function useDailyHistory(trackingOrders: TrackingOrder[]): DailyHistoryRe
     const from = new Date(todayStr + 'T12:00:00+01:00'); from.setDate(from.getDate() - 6);
     const recent = last30.filter(s => s.date >= getDateISOString(from));
     if (recent.length === 0) return { deliveryRate: 0, returnRate: 0 };
+    const delivered = recent.reduce((s, d) => s + d.delivered, 0);
+    const returned = recent.reduce((s, d) => s + d.returned, 0);
+    const settled = delivered + returned;
     return {
-      deliveryRate: recent.reduce((s, d) => s + (d.delivered / Math.max(d.delivered + d.returned, 1)) * 100, 0) / recent.length,
-      returnRate: recent.reduce((s, d) => s + (d.returned / Math.max(d.delivered + d.returned, 1)) * 100, 0) / recent.length,
+      deliveryRate: settled > 0 ? delivered / settled * 100 : 0,
+      returnRate: settled > 0 ? returned / settled * 100 : 0,
     };
   }, [last30, todayStr]);
 
   const ma30 = useMemo(() => {
     if (last30.length === 0) return { deliveryRate: 0, returnRate: 0 };
+    const delivered = last30.reduce((s, d) => s + d.delivered, 0);
+    const returned = last30.reduce((s, d) => s + d.returned, 0);
+    const settled = delivered + returned;
     return {
-      deliveryRate: last30.reduce((s, d) => s + (d.delivered / Math.max(d.delivered + d.returned, 1)) * 100, 0) / last30.length,
-      returnRate: last30.reduce((s, d) => s + (d.returned / Math.max(d.delivered + d.returned, 1)) * 100, 0) / last30.length,
+      deliveryRate: settled > 0 ? delivered / settled * 100 : 0,
+      returnRate: settled > 0 ? returned / settled * 100 : 0,
     };
   }, [last30]);
 

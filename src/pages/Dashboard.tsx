@@ -161,7 +161,7 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         <KPICard icon={<PackageCheck className="h-5 w-5" />} label="طلبات التتبع (الفترة)" value={formatNumber(data.total)} />
-        <KPICard icon={<DollarSign className="h-5 w-5" />} label="قيمة الطلبات (كل الحالات)" value={formatCurrency(data.totalRevenue)} color="#1D9E75" />
+        <KPICard icon={<DollarSign className="h-5 w-5" />} label="قيمة الطلبات (كل الحالات)" value={formatCurrency(data.orderValue)} color="#378ADD" />
         <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم التوصيل" value={formatNumber(data.delivered)} color="#1D9E75" />
         <KPICard icon={<XCircle className="h-5 w-5" />} label="المرتجعات" value={formatNumber(data.returned)} color="#E24B4A" />
         <KPICard icon={<BarChart3 className="h-5 w-5" />} label="متوسط قيمة الطلب" value={formatCurrency(data.avgOrderValue)} color="#7F77DD" />

@@ -138,8 +138,8 @@ export function analyzeProductPeriod(
   tracking: TrackingOrder[],
   filter: ProductPeriodFilter,
 ): ProductPeriodData {
-  const from = new Date(filter.dateFrom);
-  const to = new Date(filter.dateTo);
+  const from = new Date(filter.dateFrom + 'T00:00:00');
+  const to = new Date(filter.dateTo + 'T00:00:00');
   to.setHours(23, 59, 59, 999);
 
   const periodOrders = tracking.filter(t => {
@@ -181,18 +181,19 @@ export function analyzeProductPeriod(
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([date, d]) => ({ date, ...d }));
 
-  const wilayaMap = new Map<string, { orders: number; delivered: number }>();
+  const wilayaMap = new Map<string, { orders: number; delivered: number; returned: number }>();
   periodOrders.forEach(t => {
     if (!t.wilaya) return;
-    const e = wilayaMap.get(t.wilaya) || { orders: 0, delivered: 0 };
+    const e = wilayaMap.get(t.wilaya) || { orders: 0, delivered: 0, returned: 0 };
     e.orders++;
     if (t.statusCategory === 'delivered') e.delivered++;
+    if (t.statusCategory === 'returned') e.returned++;
     wilayaMap.set(t.wilaya, e);
   });
   const topWilayas = [...wilayaMap.entries()]
     .map(([wilaya, d]) => ({
       wilaya, ...d,
-      deliveryRate: d.orders > 0 ? (d.delivered / d.orders) * 100 : 0,
+      deliveryRate: d.delivered + d.returned > 0 ? (d.delivered / (d.delivered + d.returned)) * 100 : 0,
     }))
     .sort((a, b) => b.orders - a.orders)
     .slice(0, 10);
@@ -348,8 +349,8 @@ export function buildWilayaAnalysis(
   filter: ProductPeriodFilter,
   expenses: ProductExpenses,
 ): WilayaAnalysis[] {
-  const from = new Date(filter.dateFrom);
-  const to = new Date(filter.dateTo);
+  const from = new Date(filter.dateFrom + 'T00:00:00');
+  const to = new Date(filter.dateTo + 'T00:00:00');
   to.setHours(23, 59, 59, 999);
 
   const periodOrders = tracking.filter(t => {
@@ -379,13 +380,14 @@ export function buildWilayaAnalysis(
   return [...wilayaMap.entries()]
     .map(([wilaya, d]) => {
       const inProgress = d.orders - d.delivered - d.returned;
-      const deliveryRate = d.orders > 0 ? (d.delivered / d.orders) * 100 : 0;
+      const settled = d.delivered + d.returned;
+      const deliveryRate = settled > 0 ? (d.delivered / settled) * 100 : 0;
       const avgOrderValue = d.delivered > 0 ? d.revenue / d.delivered : 0;
       const returnCost = d.returned * (expenses.returnFeePerOrder + expenses.unitCost);
       const profitContribution = d.netRevenue - (d.delivered * variableCostPerOrder) - returnCost;
       const profitShare = Math.max(0, profitContribution) / totalProfitContribution;
       const ordersShare = d.orders / totalOrders;
-      const score = Math.min(100, (deliveryRate * 0.40 + profitShare * 0.35 + ordersShare * 0.25) * 100);
+      const score = Math.min(100, deliveryRate * 0.40 + profitShare * 100 * 0.35 + ordersShare * 100 * 0.25);
       const tier: WilayaAnalysis['tier'] = score >= 70 ? 'A' : score >= 45 ? 'B' : score >= 25 ? 'C' : 'D';
       return { wilaya, orders: d.orders, delivered: d.delivered, returned: d.returned, inProgress, deliveryRate, revenue: d.revenue, netRevenue: d.netRevenue, profitContribution, avgOrderValue, returnCost, score, tier };
     })

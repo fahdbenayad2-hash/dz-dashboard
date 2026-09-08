@@ -44,7 +44,7 @@ export function MonthlyReport({ trackingOrders }: { trackingOrders: TrackingOrde
             {last3.map((m, i) => {
               const prev = i < last3.length - 1 ? last3[i + 1] : null;
               const orderChange = prev && prev.total > 0 ? ((m.total - prev.total) / prev.total) * 100 : 0;
-              const revChange = prev && prev.totalRevenue > 0 ? ((m.totalRevenue - prev.totalRevenue) / prev.totalRevenue) * 100 : 0;
+              const revChange = prev && prev.deliveredRevenue > 0 ? ((m.deliveredRevenue - prev.deliveredRevenue) / prev.deliveredRevenue) * 100 : 0;
               return (
                 <Card key={m.month}>
                   <CardContent className="p-4 space-y-3">
@@ -67,8 +67,8 @@ export function MonthlyReport({ trackingOrders }: { trackingOrders: TrackingOrde
                         <span className="font-medium tabular-nums">{formatPercent(m.deliveryRate)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-[var(--color-text-muted)]">الإيراد</span>
-                        <span className="font-medium tabular-nums">{formatCurrency(m.totalRevenue)}</span>
+                        <span className="text-[var(--color-text-muted)]">إيراد المسلّم</span>
+                        <span className="font-medium tabular-nums">{formatCurrency(m.deliveredRevenue)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-[var(--color-text-muted)]">صافي الإيراد</span>
@@ -86,7 +86,7 @@ export function MonthlyReport({ trackingOrders }: { trackingOrders: TrackingOrde
                         <div className="flex items-center gap-1">
                           {revChange >= 0 ? <TrendingUp className="h-3 w-3 text-[var(--color-success)]" /> : <TrendingDown className="h-3 w-3 text-[var(--color-danger)]" />}
                           <span className={revChange >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}>
-                            الإيراد: {revChange >= 0 ? '+' : ''}{revChange.toFixed(1)}%
+                            إيراد المسلّم: {revChange >= 0 ? '+' : ''}{revChange.toFixed(1)}%
                           </span>
                         </div>
                       </div>
@@ -136,7 +136,7 @@ export function MonthlyReport({ trackingOrders }: { trackingOrders: TrackingOrde
               <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم التوصيل" value={formatNumber(breakdown.metrics.delivered)} color="#1D9E75" />
               <KPICard icon={<XCircle className="h-5 w-5" />} label="مرتجع" value={formatNumber(breakdown.metrics.returned)} color="#E24B4A" />
               <KPICard icon={<Package className="h-5 w-5" />} label="قيد التوصيل" value={formatNumber(breakdown.metrics.inTransit)} color="#EF9F27" />
-              <KPICard icon={<DollarSign className="h-5 w-5" />} label="الإيراد" value={formatCurrency(breakdown.metrics.totalRevenue)} color="#378ADD" />
+              <KPICard icon={<DollarSign className="h-5 w-5" />} label="إيراد المسلّم" value={formatCurrency(breakdown.metrics.deliveredRevenue)} color="#378ADD" />
               <KPICard icon={<DollarSign className="h-5 w-5" />} label="صافي الإيراد" value={formatCurrency(breakdown.metrics.netRevenue)} color="#1D9E75" />
             </div>
 

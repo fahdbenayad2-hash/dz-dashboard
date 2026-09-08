@@ -99,7 +99,7 @@ export interface AgentData {
   confirmedOrders: number;
   failedOrders: number;
   cancellationRate: number;
-  totalRevenue: number;
+  deliveredRevenue: number;
   avgOrderValue: number;
   badge: AgentBadge;
 }

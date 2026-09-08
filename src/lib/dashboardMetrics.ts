@@ -124,14 +124,15 @@ export function getTrackingMetrics(tracking: TrackingOrder[]) {
   const inTransit = tracking.filter(t => t.statusCategory === 'transit').length;
   const inDelivery = tracking.filter(t => t.statusCategory === 'delivery').length;
   const others = tracking.filter(t => t.statusCategory === 'others').length;
-  const totalRevenue = tracking.reduce((s, t) => s + t.total, 0);
+  const orderValue = tracking.reduce((s, t) => s + t.total, 0);
   const settled = getSettledMetrics(tracking);
+  const deliveredRevenue = settled.deliveredRevenue;
   const avgOrderValue = settled.avgOrderValue;
   const netRevenue = settled.netRevenue;
   const deliveryRate = settled.deliveryRate;
   const returnRate = settled.cancellationRate;
 
-  return { total, delivered, returned, inTransit, inDelivery, others, totalRevenue, avgOrderValue, netRevenue, deliveryRate, returnRate };
+  return { total, delivered, returned, inTransit, inDelivery, others, orderValue, deliveredRevenue, avgOrderValue, netRevenue, deliveryRate, returnRate };
 }
 
 export function getSettledMetrics(tracking: TrackingOrder[]) {
@@ -166,12 +167,11 @@ export function getAgentCountsTracking(tracking: TrackingOrder[]) {
 }
 
 export function getAgentDataTracking(tracking: TrackingOrder[]) {
-  const map = new Map<string, { total: number; revenue: number; delivered: number; returned: number; deliveredRevenue: number }>();
+  const map = new Map<string, { total: number; delivered: number; returned: number; deliveredRevenue: number }>();
   tracking.forEach(t => {
     if (!t.agent) return;
-    const existing = map.get(t.agent) || { total: 0, revenue: 0, delivered: 0, returned: 0, deliveredRevenue: 0 };
+    const existing = map.get(t.agent) || { total: 0, delivered: 0, returned: 0, deliveredRevenue: 0 };
     existing.total++;
-    existing.revenue += t.total;
     if (t.statusCategory === 'delivered') { existing.delivered++; existing.deliveredRevenue += t.total; }
     if (t.statusCategory === 'returned') existing.returned++;
     map.set(t.agent, existing);
@@ -185,7 +185,7 @@ export function getAgentDataTracking(tracking: TrackingOrder[]) {
         confirmedOrders: d.delivered,
         failedOrders: d.returned,
         cancellationRate: settled > 0 ? (d.returned / settled) * 100 : 0,
-        totalRevenue: d.revenue,
+        deliveredRevenue: d.deliveredRevenue,
         avgOrderValue: d.delivered > 0 ? d.deliveredRevenue / d.delivered : 0,
       };
     })
@@ -218,6 +218,43 @@ export function getProductOrderCountsTracking(tracking: TrackingOrder[]) {
       if (t.product) map.set(t.product, (map.get(t.product) || 0) + 1);
     });
   return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+}
+
+export function getProductPerformance(tracking: TrackingOrder[]) {
+  const map = new Map<string, { orders: number; delivered: number; returned: number; deliveredRevenue: number }>();
+  tracking.forEach(t => {
+    if (!t.product) return;
+    const current = map.get(t.product) || { orders: 0, delivered: 0, returned: 0, deliveredRevenue: 0 };
+    current.orders++;
+    if (t.statusCategory === 'delivered') {
+      current.delivered++;
+      current.deliveredRevenue += t.total;
+    }
+    if (t.statusCategory === 'returned') current.returned++;
+    map.set(t.product, current);
+  });
+
+  const products = [...map.entries()]
+    .map(([name, values]) => {
+      const settled = values.delivered + values.returned;
+      return {
+        name,
+        orders: values.orders,
+        delivered: values.delivered,
+        returned: values.returned,
+        revenue: values.deliveredRevenue,
+        deliveryRate: settled > 0 ? values.delivered / settled * 100 : 0,
+        avgValue: values.delivered > 0 ? values.deliveredRevenue / values.delivered : 0,
+      };
+    })
+    .sort((a, b) => b.orders - a.orders);
+
+  return {
+    products,
+    top: products[0] || null,
+    totalOrders: products.reduce((sum, product) => sum + product.orders, 0),
+    deliveredRevenue: products.reduce((sum, product) => sum + product.revenue, 0),
+  };
 }
 
 export function getMonthlyRevenueTracking(tracking: TrackingOrder[]) {
@@ -419,17 +456,21 @@ export function getYearlyTopProducts(tracking: TrackingOrder[], year: number, li
 }
 
 export function getYearlyTopWilayas(tracking: TrackingOrder[], year: number, limit = 20) {
-  const map = new Map<string, { orders: number; delivered: number; revenue: number }>();
+  const map = new Map<string, { orders: number; delivered: number; returned: number; revenue: number }>();
   tracking
     .filter(t => isValidDate(t.date) && t.date.getFullYear() === year && t.wilaya)
     .forEach(t => {
-      const e = map.get(t.wilaya) || { orders: 0, delivered: 0, revenue: 0 };
+      const e = map.get(t.wilaya) || { orders: 0, delivered: 0, returned: 0, revenue: 0 };
       e.orders++;
       if (t.statusCategory === 'delivered') { e.delivered++; e.revenue += t.total; }
+      if (t.statusCategory === 'returned') e.returned++;
       map.set(t.wilaya, e);
     });
   return [...map.entries()]
-    .map(([wilaya, d]) => ({ wilaya, ...d, deliveryRate: d.orders > 0 ? (d.delivered / d.orders) * 100 : 0 }))
+    .map(([wilaya, d]) => {
+      const settled = d.delivered + d.returned;
+      return { wilaya, ...d, deliveryRate: settled > 0 ? (d.delivered / settled) * 100 : 0 };
+    })
     .sort((a, b) => b.orders - a.orders)
     .slice(0, limit);
 }

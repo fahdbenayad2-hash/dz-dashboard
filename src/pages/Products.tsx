@@ -11,7 +11,7 @@ import { usePricing } from '@/hooks/usePricing';
 import { formatCurrency, formatPercent } from '@/lib/utils';
 import { Copy, RotateCcw, Trophy } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
-import { isValidDate } from '@/lib/dashboardMetrics';
+import { getProductPerformance, isValidDate } from '@/lib/dashboardMetrics';
 
 function toInputDate(d: Date): string {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -20,26 +20,7 @@ function toInputDate(d: Date): string {
 function useProductData(tracking: TrackingOrder[], from: Date, to: Date) {
   return useMemo(() => {
     const periodTracking = tracking.filter(t => isValidDate(t.date) && t.date! >= from && t.date! <= to);
-    const map = new Map<string, { orders: number; delivered: number; returned: number; revenue: number }>();
-    periodTracking.forEach(t => {
-      if (!t.product) return;
-      const existing = map.get(t.product) || { orders: 0, delivered: 0, returned: 0, revenue: 0 };
-      existing.orders++;
-      existing.revenue += t.total;
-      if (t.statusCategory === 'delivered') existing.delivered++;
-      if (t.statusCategory === 'returned') existing.returned++;
-      map.set(t.product, existing);
-    });
-    const products = [...map.entries()]
-      .map(([name, d]) => {
-        const deliveryRate = d.orders > 0 ? (d.delivered / d.orders) * 100 : 0;
-        return { name, ...d, deliveryRate, avgValue: d.orders > 0 ? d.revenue / d.orders : 0 };
-      })
-      .sort((a, b) => b.orders - a.orders);
-    const top = products.length > 0 ? products[0] : null;
-    const totalOrders = products.reduce((s, p) => s + p.orders, 0);
-    const totalRevenue = products.reduce((s, p) => s + p.revenue, 0);
-    return { products, top, totalOrders, totalRevenue };
+    return getProductPerformance(periodTracking);
   }, [tracking, from, to]);
 }
 
@@ -51,7 +32,7 @@ export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }
   const [dateTo, setDateTo] = useState(() => toInputDate(new Date()));
   const from = new Date(dateFrom + 'T00:00:00');
   const to = new Date(dateTo + 'T23:59:59');
-  const { products, top, totalOrders, totalRevenue } = useProductData(trackingOrders, from, to);
+  const { products, top, totalOrders, deliveredRevenue } = useProductData(trackingOrders, from, to);
   const [search, setSearch] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
 
@@ -163,7 +144,7 @@ export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }
                 <CardTitle>المنتجات المُباعة ({filtered.length})</CardTitle>
                 <div className="flex items-center gap-4 text-sm text-[var(--color-text-muted)]">
                   <span>إجمالي الطلبات: <strong>{totalOrders}</strong></span>
-                  <span>إجمالي الإيراد: <strong>{formatCurrency(totalRevenue)}</strong></span>
+                  <span>إيراد المسلّم: <strong>{formatCurrency(deliveredRevenue)}</strong></span>
                 </div>
                 <Input
                   placeholder="بحث عن منتج..."

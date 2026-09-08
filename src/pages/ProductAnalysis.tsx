@@ -9,6 +9,7 @@ import { LineChart } from '@/components/charts/LineChart';
 import { BarChart } from '@/components/charts/BarChart';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import { analyzeProductPeriod, buildFinancialAnalysis, buildWilayaAnalysis, buildCompetitiveAnalysis } from '@/lib/financialEngine';
+import { businessDate } from '@/lib/businessDate';
 import { TrendingUp, TrendingDown, Minus, DollarSign, BarChart3, Target, Shield, ChevronUp, ChevronDown } from 'lucide-react';
 
 function defaultDates() {
@@ -16,8 +17,8 @@ function defaultDates() {
   const from = new Date();
   from.setDate(from.getDate() - 30);
   return {
-    from: from.toISOString().slice(0, 10),
-    to:   to.toISOString().slice(0, 10),
+    from: businessDate(from),
+    to:   businessDate(to),
   };
 }
 
@@ -115,14 +116,12 @@ function ProductAnalysisView({
           icon={<TrendingUp className="h-5 w-5" />}
           label="إجمالي الطلبات"
           value={formatNumber(period.totalOrders)}
-          change={0}
           changeLabel={`${period.daysInPeriod} يوم — متوسط ${period.avgDailyOrders.toFixed(1)}/يوم`}
         />
         <KPICard
           icon={<TrendingUp className="h-5 w-5" />}
           label="تم التوصيل"
           value={formatNumber(period.delivered)}
-          change={period.deliveryRate - 100}
           changeLabel={`معدل ${period.deliveryRate.toFixed(1)}% (محسوم)`}
           color="var(--color-success)"
         />
@@ -130,7 +129,6 @@ function ProductAnalysisView({
           icon={<TrendingDown className="h-5 w-5" />}
           label="مرتجع"
           value={formatNumber(period.returned)}
-          change={-period.cancellationRate}
           changeLabel={`${period.cancellationRate.toFixed(1)}% من المحسوم`}
           color="var(--color-danger)"
         />
@@ -138,7 +136,6 @@ function ProductAnalysisView({
           icon={<Minus className="h-5 w-5" />}
           label="قيد التنفيذ"
           value={formatNumber(period.inProgress)}
-          change={0}
           changeLabel="لم يُحسم بعد"
           color="var(--color-warning)"
         />
@@ -148,17 +145,15 @@ function ProductAnalysisView({
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         <KPICard
           icon={<DollarSign className="h-5 w-5" />}
-          label="صافي الربح الحقيقي"
+          label="صافي الربح التقديري"
           value={formatCurrency(analysis.trueNetProfit)}
-          change={analysis.trueNetMargin}
-          changeLabel="الهامش الحقيقي"
+          changeLabel={`الهامش التقديري ${analysis.trueNetMargin.toFixed(1)}%`}
           color={analysis.trueNetProfit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}
         />
         <KPICard
           icon={<BarChart3 className="h-5 w-5" />}
           label="ربح القطعة"
           value={formatCurrency(analysis.profitPerUnit)}
-          change={0}
           changeLabel={`بعد خصم ${formatCurrency(analysis.variableCostPerOrder)} متغيرات/قطعة`}
           color={analysis.profitPerUnit > 0 ? 'var(--color-success)' : 'var(--color-danger)'}
         />
@@ -166,7 +161,6 @@ function ProductAnalysisView({
           icon={<Target className="h-5 w-5" />}
           label="ROI"
           value={analysis.roi.toFixed(1) + '%'}
-          change={0}
           changeLabel={`على استثمار ${formatCurrency(analysis.totalInvestment)}`}
           color={analysis.roi > 0 ? 'var(--color-success)' : 'var(--color-danger)'}
         />
@@ -174,7 +168,6 @@ function ProductAnalysisView({
           icon={<Shield className="h-5 w-5" />}
           label="نقطة التعادل (وحدات)"
           value={formatNumber(analysis.breakEvenUnits)}
-          change={0}
           changeLabel={`لتغطية التكاليف الثابتة ${formatCurrency(analysis.expenses.adSpend + analysis.expenses.otherExpenses)}`}
           color="var(--color-primary)"
         />
@@ -185,22 +178,25 @@ function ProductAnalysisView({
         <Card>
           <CardHeader><CardTitle>قائمة الدخل الكاملة (P&L)</CardTitle></CardHeader>
           <CardContent>
+            <p className="mb-3 text-xs leading-5 text-[var(--color-text-muted)]">
+              تقدير تشغيلي: يفترض أن كل مرتجع يسبب خسارة تكلفة وحدة كاملة. عدّل التكاليف اليدوية حسب فاتورة الناقل وحالة رجوع المخزون قبل اتخاذ قرار مالي.
+            </p>
             <div className="space-y-2 text-sm">
               {[
                 { label: 'الإيراد الإجمالي (مسلّم)', value: period.grossRevenue, type: 'income' as const },
-                { label: '← الإيراد الصافي (بعد الشحن)', value: period.netRevenue, type: 'income' as const },
+                { label: 'رسوم الشحن المسجلة داخل قيمة الطلب', value: -period.deliveryCostPaid, type: 'cost' as const },
+                { label: '= إيراد البضاعة بعد فصل الشحن', value: period.netRevenue, type: 'income' as const },
                 { label: '', value: 0, type: 'separator' as const },
                 { label: 'تكلفة البضاعة المباعة (COGS)', value: -analysis.totalCOGS, type: 'cost' as const },
-                { label: 'رسوم الشحن (للطلبات المسلّمة)', value: -analysis.totalShippingPaid, type: 'cost' as const },
+                { label: 'تكلفة الناقل للطلبات المسلّمة (إدخال يدوي)', value: -analysis.totalShippingPaid, type: 'cost' as const },
                 { label: 'رسوم التغليف', value: -analysis.totalPackaging, type: 'cost' as const },
-                { label: 'تكلفة المرتجعات (وحدة + رسوم)', value: -analysis.returnTotalCost, type: 'cost' as const },
-                { label: 'تكلفة شحن المسلّمين', value: -period.deliveryCostPaid, type: 'cost' as const },
-                { label: 'خسارة شحن المرتجعين', value: -period.returnShippingLoss, type: 'cost' as const },
+                { label: 'تكلفة المرتجعات المفترضة (وحدة + رسوم يدوية)', value: -analysis.returnTotalCost, type: 'cost' as const },
+                { label: 'رسوم الشحن المسجلة للمرتجعات', value: -period.returnShippingLoss, type: 'cost' as const },
                 { label: 'الإنفاق الإعلاني', value: -analysis.expenses.adSpend, type: 'cost' as const },
                 { label: 'مصاريف أخرى', value: -analysis.expenses.otherExpenses, type: 'cost' as const },
                 { label: '', value: 0, type: 'separator' as const },
-                { label: '= صافي الربح الحقيقي', value: analysis.trueNetProfit, type: 'result' as const },
-                { label: 'الهامش الحقيقي', value: analysis.trueNetMargin, type: 'resultPercent' as const },
+                { label: '= صافي الربح التقديري', value: analysis.trueNetProfit, type: 'result' as const },
+                { label: 'الهامش التقديري', value: analysis.trueNetMargin, type: 'resultPercent' as const },
               ].map((row, i) => (
                 row.type === 'separator'
                   ? <div key={i} className="border-t border-[var(--color-border)]" />
@@ -630,13 +626,13 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
                   onChange={e => handleExpenseChange('unitPrice', Number(e.target.value))} />
               </div>
               <div>
-                <label className="block text-xs text-[var(--color-text-muted)] mb-1">رسوم شحن/طلب (دج)</label>
+                <label className="block text-xs text-[var(--color-text-muted)] mb-1">تكلفة الناقل/طلب مسلّم (دج)</label>
                 <Input type="number" min={0} placeholder="0"
                   value={expenses.shippingFeePerOrder || ''}
                   onChange={e => handleExpenseChange('shippingFeePerOrder', Number(e.target.value))} />
               </div>
               <div>
-                <label className="block text-xs text-[var(--color-text-muted)] mb-1">رسوم إرجاع (دج)</label>
+                <label className="block text-xs text-[var(--color-text-muted)] mb-1">تكلفة إضافية/طلب مرتجع (دج)</label>
                 <Input type="number" min={0} placeholder="0"
                   value={expenses.returnFeePerOrder || ''}
                   onChange={e => handleExpenseChange('returnFeePerOrder', Number(e.target.value))} />
