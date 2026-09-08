@@ -137,29 +137,40 @@ function dzSyncTick() {
 
 function dzPublish_(ss, state) {
   var prefix = state.targetPrefix || '';
+  var props = PropertiesService.getScriptProperties();
   var existing = ss.getSheetByName(prefix + 'SyncStatus');
   if (existing && existing.getRange(2, 1, 1, 3).getValues()[0][0] === state.generation) return;
   var requests = [];
   ['Orders', 'Tracking'].forEach(function (name) {
     var progress = state.sources[name];
     if (!progress.done) throw new Error('INCOMPLETE_RUN');
-    var stage = ss.getSheetById(progress.sheetId), target = ss.getSheetByName(prefix + name);
+    var target = ss.getSheetByName(prefix + name);
     if (!target) throw new Error('TARGET_MISSING');
-    var fresh = progress.received ? stage.getRange(2, 1, progress.received, 11).getValues() : [];
-    var archiveSheet = ss.getSheetByName(name === 'Orders' ? '_archive_orders' : '_archive_tracking');
-    var archive = archiveSheet && archiveSheet.getLastRow() > 1 ? archiveSheet.getRange(2, 1, archiveSheet.getLastRow() - 1, 10).getValues() : [];
-    var merged = dzMergeRows_(fresh, archive);
-    // Unexpected large drops need an explicit investigation before publication.
-    if (target.getLastRow() > 100 && merged.length < (target.getLastRow() - 1) * 0.8) throw new Error('UNEXPECTED_COUNT_DROP');
-    var height = Math.max(merged.length + 1, target.getLastRow(), stage.getMaxRows());
-    if (stage.getMaxRows() < height) stage.insertRowsAfter(stage.getMaxRows(), height - stage.getMaxRows());
-    // Keep original page staging immutable, including on publication retries.
-    var headers = stage.getRange(1, 1, 1, 11).getValues()[0];
-    var publishName = '_dz_publish_' + name + '_' + state.generation.slice(0, 8);
-    var publish = ss.getSheetByName(publishName) || ss.insertSheet(publishName);
-    if (publish.getMaxRows() < height) publish.insertRowsAfter(publish.getMaxRows(), height - publish.getMaxRows());
-    publish.getRange(1, 1, height, 11).clearContent();
-    publish.getRange(1, 1, merged.length + 1, 11).setValues([headers].concat(merged)); publish.hideSheet();
+    var publish = progress.publishSheetId ? ss.getSheetById(progress.publishSheetId) : null;
+    var height = Number(progress.publishHeight || 0);
+    if (!publish || !Number.isInteger(height) || height < 1) {
+      var stage = ss.getSheetById(progress.sheetId);
+      if (!stage) throw new Error('STAGING_MISSING');
+      var fresh = progress.received ? stage.getRange(2, 1, progress.received, 11).getValues() : [];
+      var archiveSheet = ss.getSheetByName(name === 'Orders' ? '_archive_orders' : '_archive_tracking');
+      var archive = archiveSheet && archiveSheet.getLastRow() > 1 ? archiveSheet.getRange(2, 1, archiveSheet.getLastRow() - 1, 10).getValues() : [];
+      var merged = dzMergeRows_(fresh, archive);
+      // Unexpected large drops need an explicit investigation before publication.
+      if (target.getLastRow() > 100 && merged.length < (target.getLastRow() - 1) * 0.8) throw new Error('UNEXPECTED_COUNT_DROP');
+      height = Math.max(merged.length + 1, target.getLastRow(), stage.getMaxRows());
+      // Keep original page staging immutable, including on publication retries.
+      var headers = stage.getRange(1, 1, 1, 11).getValues()[0];
+      var publishName = '_dz_publish_' + name + '_' + state.generation.slice(0, 8);
+      publish = ss.getSheetByName(publishName) || ss.insertSheet(publishName);
+      if (publish.getMaxRows() < height) publish.insertRowsAfter(publish.getMaxRows(), height - publish.getMaxRows());
+      publish.getRange(1, 1, height, 11).clearContent();
+      publish.getRange(1, 1, merged.length + 1, 11).setValues([headers].concat(merged));
+      publish.hideSheet();
+      SpreadsheetApp.flush();
+      progress.publishSheetId = publish.getSheetId();
+      progress.publishHeight = height;
+      props.setProperty('DZ_SYNC_STATE', JSON.stringify(state));
+    }
     requests.push({ updateSheetProperties: { properties: { sheetId: target.getSheetId(), gridProperties: { rowCount: Math.max(height, target.getMaxRows()), columnCount: Math.max(11, target.getMaxColumns()) } }, fields: 'gridProperties.rowCount,gridProperties.columnCount' } });
     requests.push({ copyPaste: { source: { sheetId: publish.getSheetId(), startRowIndex: 0, endRowIndex: height, startColumnIndex: 0, endColumnIndex: 11 }, destination: { sheetId: target.getSheetId(), startRowIndex: 0, endRowIndex: height, startColumnIndex: 0, endColumnIndex: 11 }, pasteType: 'PASTE_VALUES' } });
   });
