@@ -21,6 +21,10 @@ function dzSyncProgress() {
 }
 
 function dzValidateShadowTest() {
+  console.log(JSON.stringify(dzShadowReport_()));
+}
+
+function dzShadowReport_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var status = ss.getSheetByName('_dz_test_SyncStatus');
   if (!status) throw new Error('SHADOW_STATUS_MISSING');
@@ -41,7 +45,28 @@ function dzValidateShadowTest() {
     });
     report.sources[name] = { rows: count, duplicateIds: duplicates, blankIds: blanks };
   });
-  console.log(JSON.stringify(report));
+  return report;
+}
+
+function dzPromoteValidatedShadow() {
+  var report = dzShadowReport_();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var requests = [];
+  ['Orders', 'Tracking'].forEach(function (name) {
+    var check = report.sources[name];
+    if (!check || check.rows < 1 || check.duplicateIds || check.blankIds) throw new Error('SHADOW_VALIDATION_FAILED');
+    var source = ss.getSheetByName('_dz_test_' + name), target = ss.getSheetByName(name);
+    if (!source || !target) throw new Error('PROMOTION_TARGET_MISSING');
+    var height = source.getLastRow();
+    requests.push({ updateSheetProperties: { properties: { sheetId: target.getSheetId(), gridProperties: { rowCount: height, columnCount: Math.max(11, target.getMaxColumns()) } }, fields: 'gridProperties.rowCount,gridProperties.columnCount' } });
+    requests.push({ copyPaste: { source: { sheetId: source.getSheetId(), startRowIndex: 0, endRowIndex: height, startColumnIndex: 0, endColumnIndex: 11 }, destination: { sheetId: target.getSheetId(), startRowIndex: 0, endRowIndex: height, startColumnIndex: 0, endColumnIndex: 11 }, pasteType: 'PASTE_VALUES' } });
+  });
+  var status = ss.getSheetByName('SyncStatus') || ss.insertSheet('SyncStatus');
+  var values = [['Generation', 'CompletedAt', 'Status'], [report.generation, new Date().toISOString(), 'completed']];
+  requests.push({ updateCells: { start: { sheetId: status.getSheetId(), rowIndex: 0, columnIndex: 0 }, rows: values.map(function (row) { return { values: row.map(function (v) { return { userEnteredValue: { stringValue: v } }; }) }; }), fields: 'userEnteredValue' } });
+  SpreadsheetApp.flush();
+  Sheets.Spreadsheets.batchUpdate({ requests: requests }, ss.getId());
+  console.log('PROMOTION_COMPLETED generation=' + report.generation + ' orders=' + report.sources.Orders.rows + ' tracking=' + report.sources.Tracking.rows);
 }
 
 function dzPageProgress_(data, cursor, received, limit, mode, expected) {
