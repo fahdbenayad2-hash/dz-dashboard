@@ -1,15 +1,17 @@
-# Octomatic authentication adapter — local preparation
+# Octomatic authentication adapter
 
-This adapter is tested with mocked services only. It is not installed in the live
-spreadsheet. The login request and token response shape were observed in the public
-Octomatic frontend; provider support and session effects still require verification.
+The adapter is covered by mocked tests. On 2026-09-08 its manual-token path was
+installed in the live Apps Script and verified with the read-only pagination
+diagnostic. The login request and token response shape were observed in the public
+Octomatic frontend; a real automatic renewal still requires a controlled credential
+test and may be blocked by CAPTCHA or OTP.
 
-Installation after a controlled account test:
+Automatic-mode setup after a controlled account test:
 
 1. Save a private backup/version of the existing Apps Script.
-2. Remove its existing `apiGet_` function and add `Authentication.gs`. Keep existing
-   `CONFIG`, `getXAuth`, and the current `JWT_TOKEN`/`X_AUTH_KEY` Script Properties.
-   Do not retain two definitions of `apiGet_`.
+2. Keep existing `CONFIG`, `getXAuth`, and the current `JWT_TOKEN`/`X_AUTH_KEY`
+   Script Properties. The live project has the adapter embedded in its main file;
+   do not add a second definition of `apiGet_`.
 3. Keep `OCTO_AUTO_LOGIN` unset for manual-token mode. Automatic mode requires the
    owner to enter `OCTO_LOGIN_ACCOUNT`, `OCTO_LOGIN_PASSWORD`, `OCTO_STORE_NAME` and
    set `OCTO_AUTO_LOGIN=true` in the server's private Script Properties.
@@ -30,19 +32,14 @@ an aggressive trigger until resumable staging and complete-run publication repla
 the current `break → resetSheet` path. Never activate this file alone as a claim that
 the entire synchronization pipeline has been repaired.
 
-## Resumable synchronization (installed, not activated)
+## Resumable synchronization (installed and promoted)
 
-On 2026-09-07 ResumableSync.gs was added to the bound Apps Script project.
-Advanced Sheets v4 was added by the owner and verified in Services. Shadow
-targets were prepared successfully. Live synchronization attempts encountered
-Google Sheets timeouts and then a Google Apps Script engine INTERNAL error.
-No complete shadow generation or production publication has been verified.
-No new trigger was created. The original sync and its triggers remain unchanged.
-Initialization now checkpoints each stage and reuses deterministic staging names
-after uncertain timeouts; a regression test covers creation succeeding before
-the timeout response. Review DZ_SYNC_STATE before resuming; do not reset it blindly.
-The module supports `_dz_test_` targets to validate publication before touching
-Orders/Tracking; changing targets during an unfinished run is rejected.
+On 2026-09-08 the validated shadow generation was atomically promoted to production:
+9,412 Orders and 16,386 Tracking rows with no blank or duplicate IDs in either
+published target. `SyncStatus` records the completed generation. Advanced Sheets v4
+is enabled. Initialization checkpoints each stage and reuses deterministic staging
+names after uncertain timeouts. Review `DZ_SYNC_STATE` before resuming; do not reset
+it blindly. The module rejects target changes during an unfinished run.
 
 Live diagnostic on 2026-09-07: added and ran `PaginationDiagnostic.gs` with
 `dzCheckPagination` in the existing bound project. Five small read requests per

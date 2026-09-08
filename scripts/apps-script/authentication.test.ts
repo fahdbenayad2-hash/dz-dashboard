@@ -30,6 +30,14 @@ describe('Apps Script auth adapter (mocked services only)', () => {
     expect(() => test.api.octoToken_()).toThrow('AUTH_REQUIRED');
     expect(test.fetch).not.toHaveBeenCalled();
   });
+  it('normalizes legacy values that already include the Bearer prefix', () => {
+    const test = setup(false);
+    const current = jwt(24);
+    test.properties.set('JWT_TOKEN', `Bearer ${current}`);
+    test.fetch.mockReturnValueOnce(response(200, { data: [] }));
+    expect(test.api.apiGet_('/tenants/api/orders')).toEqual({ data: [] });
+    expect(test.fetch.mock.calls[0][1].headers.Authorization).toBe(`Bearer ${current}`);
+  });
   it('verifies a renewed token before replacing the stored token', () => {
     const test = setup();
     const next = jwt(720);

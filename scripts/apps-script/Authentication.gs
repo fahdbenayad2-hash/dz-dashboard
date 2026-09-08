@@ -3,8 +3,13 @@
  * No trigger or credentials are installed by this file.
  * Auto-login requires explicit OCTO_AUTO_LOGIN=true in Script Properties.
  */
+function octoNormalizedToken_(token) {
+  return String(token || '').replace(/^Bearer\s+/i, '').trim();
+}
+
 function octoTokenExpiry_(token) {
   try {
+    token = octoNormalizedToken_(token);
     var part = token.split('.')[1];
     var payload = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(part)).getDataAsString());
     return typeof payload.exp === 'number' && isFinite(payload.exp) ? payload.exp * 1000 : null;
@@ -13,14 +18,14 @@ function octoTokenExpiry_(token) {
 
 function octoToken_(rejectedToken) {
   var props = PropertiesService.getScriptProperties();
-  var token = props.getProperty('JWT_TOKEN') || '';
+  var token = octoNormalizedToken_(props.getProperty('JWT_TOKEN'));
   var expiry = octoTokenExpiry_(token);
   if (!rejectedToken && token && (!expiry || expiry > Date.now() + 3600000)) return token;
   if (props.getProperty('OCTO_AUTO_LOGIN') !== 'true') throw new Error('AUTH_REQUIRED: renew the connection');
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) throw new Error('AUTH_BUSY: retry later');
   try {
-    token = props.getProperty('JWT_TOKEN') || '';
+    token = octoNormalizedToken_(props.getProperty('JWT_TOKEN'));
     expiry = octoTokenExpiry_(token);
     if (token && token !== rejectedToken && (!expiry || expiry > Date.now() + 3600000)) return token;
     var previousAttempt = Number(props.getProperty('OCTO_AUTH_ATTEMPT_AT') || 0);
