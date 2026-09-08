@@ -20,6 +20,30 @@ function dzSyncProgress() {
   console.log(props.getProperty('DZ_SYNC_STATE') || props.getProperty('DZ_SYNC_LAST_SUCCESS') || 'NO_RUN');
 }
 
+function dzValidateShadowTest() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var status = ss.getSheetByName('_dz_test_SyncStatus');
+  if (!status) throw new Error('SHADOW_STATUS_MISSING');
+  var statusRow = status.getRange(2, 1, 1, 3).getValues()[0];
+  if (!statusRow[0] || statusRow[2] !== 'completed') throw new Error('SHADOW_NOT_COMPLETED');
+  var report = { generation: String(statusRow[0]), status: String(statusRow[2]), sources: {} };
+  ['Orders', 'Tracking'].forEach(function (name) {
+    var sheet = ss.getSheetByName('_dz_test_' + name);
+    if (!sheet) throw new Error('SHADOW_TARGET_MISSING');
+    var count = Math.max(0, sheet.getLastRow() - 1);
+    var ids = count ? sheet.getRange(2, 1, count, 1).getValues() : [];
+    var seen = Object.create(null), duplicates = 0, blanks = 0;
+    ids.forEach(function (row) {
+      var id = String(row[0] || '');
+      if (!id) blanks++;
+      else if (seen[id]) duplicates++;
+      else seen[id] = true;
+    });
+    report.sources[name] = { rows: count, duplicateIds: duplicates, blankIds: blanks };
+  });
+  console.log(JSON.stringify(report));
+}
+
 function dzPageProgress_(data, cursor, received, limit, mode, expected) {
   if (!data || !Array.isArray(data.data) || data.data.length > limit) throw new Error('INVALID_PAGE');
   var total = data.all_count === undefined || data.all_count === null ? null : Number(data.all_count);
