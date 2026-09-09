@@ -35,7 +35,8 @@ export async function fetchSheet(sheet: string, oidcToken?: string): Promise<She
   if (!['Orders', 'Tracking', 'SyncStatus'].includes(sheet)) throw new Error('UNKNOWN_SHEET');
   const id = process.env.SHEET_ID;
   if (!id || !/^[\w-]+$/.test(id)) throw new Error('SHEETS_NOT_CONFIGURED');
-  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(sheet + '!A:J')}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`, {
+  const range = sheet === 'SyncStatus' ? '!A:C' : '!A:K';
+  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(sheet + range)}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`, {
     headers: { Authorization: 'Bearer ' + await accessToken(oidcToken) }, cache: 'no-store', signal: AbortSignal.timeout(20000),
   });
   if (!response.ok) throw new Error('SHEETS_READ_FAILED');
