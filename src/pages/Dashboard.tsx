@@ -108,7 +108,7 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
 
   return (
     <div className="space-y-6">
-      <Card className="sticky top-20 z-10 p-3 shadow-sm sm:p-4">
+      <Card className="p-3 shadow-sm sm:p-4 xl:sticky xl:top-20 xl:z-10">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <p className="text-sm font-semibold">فترة التحليل</p>

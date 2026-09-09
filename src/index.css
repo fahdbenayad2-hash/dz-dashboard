@@ -29,6 +29,8 @@
 body {
   font-family: 'Cairo', sans-serif;
   background-color: var(--color-bg);
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 4%, transparent), transparent 18rem);
+  background-attachment: fixed;
   color: var(--color-text);
   direction: rtl;
   -webkit-font-smoothing: antialiased;

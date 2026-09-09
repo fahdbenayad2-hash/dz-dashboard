@@ -13,7 +13,7 @@ export function Table({ className, children, ...props }: HTMLAttributes<HTMLTabl
 
 export function TableHeader({ className, children, ...props }: HTMLAttributes<HTMLTableSectionElement>) {
   return (
-    <thead className={classNames('border-b border-[var(--color-border)]', className)} {...props}>
+    <thead className={classNames('sticky top-0 z-[1] border-b border-[var(--color-border)] bg-gray-50/95 backdrop-blur dark:bg-gray-900/90', className)} {...props}>
       {children}
     </thead>
   );
@@ -31,7 +31,7 @@ export function TableRow({ className, children, ...props }: HTMLAttributes<HTMLT
   return (
     <tr
       className={classNames(
-        'border-b border-[var(--color-border)] transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50',
+        'border-b border-[var(--color-border)] transition-colors odd:bg-transparent even:bg-gray-50/35 hover:bg-blue-50/65 dark:even:bg-white/[0.015] dark:hover:bg-blue-950/20',
         className,
       )}
       {...props}
@@ -45,7 +45,7 @@ export function TableHead({ className, children, ...props }: ThHTMLAttributes<HT
   return (
     <th
       className={classNames(
-        'h-12 px-4 text-right align-middle font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider',
+        'h-11 px-3 text-right align-middle text-[11px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider',
         className,
       )}
       {...props}
@@ -57,7 +57,7 @@ export function TableHead({ className, children, ...props }: ThHTMLAttributes<HT
 
 export function TableCell({ className, children, ...props }: TdHTMLAttributes<HTMLTableCellElement>) {
   return (
-    <td className={classNames('p-4 align-middle text-[var(--color-text)]', className)} {...props}>
+    <td className={classNames('px-3 py-3.5 align-middle text-[var(--color-text)]', className)} {...props}>
       {children}
     </td>
   );

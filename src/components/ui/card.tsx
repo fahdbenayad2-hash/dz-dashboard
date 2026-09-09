@@ -5,7 +5,7 @@ export function Card({ className, children, ...props }: HTMLAttributes<HTMLDivEl
   return (
     <div
       className={classNames(
-        'rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-sm',
+        'rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_10px_30px_rgba(15,23,42,0.045)] transition-[border-color,box-shadow] duration-200 dark:shadow-[0_12px_30px_rgba(0,0,0,0.16)]',
         className,
       )}
       {...props}
