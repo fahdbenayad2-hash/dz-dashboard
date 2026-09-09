@@ -1,26 +1,27 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-primary: #378ADD;
-  --color-primary-dark: #2b6cb0;
+  --color-primary: #367bce;
+  --color-primary-dark: #2863ab;
   --color-success: #1D9E75;
   --color-warning: #EF9F27;
   --color-danger: #E24B4A;
   --color-purple: #7F77DD;
-  --color-bg: #F8F9FA;
+  --color-bg: #F2F5F9;
   --color-card: #FFFFFF;
   --color-border: rgba(0, 0, 0, 0.08);
-  --color-text: #0A0A0A;
+  --color-text: #1B2B41;
   --color-text-muted: #6B7280;
-  --color-sidebar: #0F1117;
+  --color-sidebar: #101D30;
   --color-sidebar-hover: #1A1D24;
   --color-sidebar-text: #9CA3AF;
   --color-sidebar-active: #FFFFFF;
 }
 
 .dark {
-  --color-bg: #0F1117;
-  --color-card: #1A1D24;
+  --color-bg: #101722;
+  --color-card: #192331;
   --color-border: rgba(255, 255, 255, 0.08);
   --color-text: #F0F0F0;
   --color-text-muted: #9CA3AF;
@@ -29,8 +30,6 @@
 body {
   font-family: 'Cairo', sans-serif;
   background-color: var(--color-bg);
-  background-image: linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 4%, transparent), transparent 18rem);
-  background-attachment: fixed;
   color: var(--color-text);
   direction: rtl;
   -webkit-font-smoothing: antialiased;
@@ -69,4 +68,41 @@ summary {
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/* Keep the date toolbar in document flow at every viewport and zoom level. */
+.period-toolbar { position: static; padding: 16px; box-shadow: none; }
+.period-layout { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.period-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.period-controls input[type="date"] { width: 145px; min-width: 0; height: 36px; direction: ltr; }
+.period-controls button { min-height: 36px; height: 36px; border-radius: 7px; }
+.overview-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.overview-metrics > .surface-card { border-top: 3px solid color-mix(in srgb, var(--color-primary) 50%, var(--color-border)); }
+.overview-metrics > .surface-card:nth-child(2),
+.overview-metrics > .surface-card:nth-child(3) { border-top-color: var(--color-success); }
+.overview-metrics > .surface-card:nth-child(4) { border-top-color: var(--color-warning); }
+.overview-metrics > .surface-card > div { display: grid; grid-template-columns: minmax(0, 1fr) 36px; align-items: center; gap: 10px; }
+.overview-metrics > .surface-card > div > span:first-child { grid-column: 2; grid-row: 1; width: 36px; height: 36px; border-radius: 8px; }
+.overview-metrics > .surface-card > div > span:last-child { grid-column: 1; grid-row: 1; width: 100%; }
+.overview-decisions { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; }
+.top-product-panel { border-inline-start: 3px solid var(--color-primary); }
+.top-product-panel .text-white\/70 { color: var(--color-text-muted); }
+.top-product-panel .bg-white\/10, .top-product-panel .bg-white\/15 { background: color-mix(in srgb, var(--color-primary) 8%, transparent); }
+.top-product-panel svg { color: var(--color-primary); }
+input[type="date"] { color-scheme: light; }
+.dark input[type="date"] { color-scheme: dark; }
+.sidebar-scroll { display: flex; flex-direction: column; gap: 14px; }
+.sidebar-scroll > div { margin: 0; }
+.sidebar-scroll a { min-height: 38px; font-size: 13px; }
+.sidebar-scroll a[aria-current="page"] { background: #223c5b; box-shadow: inset -3px 0 #70b6ff; color: #d6eaff; }
+@media (max-width: 1100px) {
+  .overview-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-decisions { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 520px) {
+  .period-controls { display: grid; grid-template-columns: 1fr auto 1fr; width: 100%; }
+  .period-controls input[type="date"] { width: 100%; }
+  .period-controls button { padding-inline: 8px; }
+  .overview-metrics { gap: 10px; }
+  .overview-metrics > .surface-card { padding: 14px; }
 }

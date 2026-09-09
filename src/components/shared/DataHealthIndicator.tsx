@@ -30,7 +30,11 @@ export function DataHealthIndicator({
   const unavailable = (!ordersUpdated && !!ordersError) || (!trackingUpdated && !!trackingError);
   const warning = !unavailable && (stale || !!ordersError || !!trackingError || !completedAt);
 
-  const label = unavailable ? 'البيانات غير متاحة' : warning ? 'البيانات تحتاج مراجعة' : 'حالة البيانات جيدة';
+  const label = unavailable ? 'البيانات غير متاحة'
+    : ordersError || trackingError ? 'تعذّر تحديث البيانات'
+    : stale ? 'المزامنة متأخرة'
+    : !completedAt ? 'وقت المزامنة غير متاح'
+    : 'البيانات محدّثة';
   const Icon = unavailable ? XCircle : warning ? AlertTriangle : CheckCircle2;
 
   return (

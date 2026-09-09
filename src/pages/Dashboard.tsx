@@ -107,14 +107,14 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
   const totalPages = Math.ceil(recentOrders.length / perPage);
 
   return (
-    <div className="space-y-6">
-      <Card className="p-3 shadow-sm sm:p-4 xl:sticky xl:top-20 xl:z-10">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+    <div className="dashboard-overview space-y-5">
+      <Card className="period-toolbar">
+        <div className="period-layout">
           <div>
             <p className="text-sm font-semibold">فترة التحليل</p>
-            <p className="text-xs text-[var(--color-text-muted)]">تطبّق على مؤشرات ورسوم هذه الصفحة</p>
+            <p className="text-xs text-[var(--color-text-muted)]">اختر المدة لعرض نتائجها</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="period-controls">
             <label className="sr-only" htmlFor="dashboard-from">من تاريخ</label>
             <Input id="dashboard-from" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="min-h-10 w-[9.5rem]" />
             <span className="text-xs text-[var(--color-text-muted)]">إلى</span>
@@ -127,14 +127,14 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
         </div>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="overview-metrics">
         <PrimaryMetric icon={<ShoppingCart className="h-5 w-5" />} label="الطلبات الجديدة" value={formatNumber(data.ordersToday)} hint="خلال الفترة المحددة" tone="primary" />
         <PrimaryMetric icon={<Truck className="h-5 w-5" />} label="معدل التوصيل" value={`${data.settledMetrics.deliveryRate.toFixed(1)}%`} hint={`من ${formatNumber(data.settledMetrics.settledCount)} طلب محسوم`} tone="success" />
         <PrimaryMetric icon={<DollarSign className="h-5 w-5" />} label="إيراد المسلّم" value={formatCurrency(data.periodRevenue)} hint="للطلبات المسلّمة فقط" tone="success" />
         <PrimaryMetric icon={<CircleAlert className="h-5 w-5" />} label="تحتاج تدخلاً" value={formatNumber(data.pendingOrders)} hint="طلبات غير مؤكدة حالياً" tone="danger" />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_23rem]">
+      <div className="overview-decisions">
         <Card>
           <CardHeader className="border-b border-[var(--color-border)]">
             <div className="flex items-center justify-between gap-3"><div><CardTitle>إجراءات مطلوبة</CardTitle><p className="mt-1 text-xs text-[var(--color-text-muted)]">أهم القوائم التي تستحق المتابعة الآن</p></div><CircleAlert className="h-5 w-5 text-[var(--color-danger)]" /></div>
@@ -146,7 +146,7 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
           </CardContent>
         </Card>
 
-        {data.topProduct && <Card className="overflow-hidden bg-[var(--color-primary)] text-white">
+        {data.topProduct && <Card className="top-product-panel overflow-hidden">
           <CardContent className="flex h-full flex-col justify-between gap-5">
             <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15"><Trophy className="h-5 w-5" /></span><div><p className="text-xs text-white/70">أفضل منتج في الفترة</p><p className="mt-1 line-clamp-2 font-bold">{data.topProduct.name}</p></div></div>
             <div className="grid grid-cols-2 gap-3"><div className="rounded-lg bg-white/10 p-3"><p className="text-xs text-white/70">طلبات مسلّمة</p><p className="mt-1 text-lg font-bold tabular-nums">{formatNumber(data.topProduct.orders)}</p></div><div className="rounded-lg bg-white/10 p-3"><p className="text-xs text-white/70">الإيراد</p><p className="mt-1 text-lg font-bold tabular-nums">{formatCurrency(data.topProduct.revenue)}</p></div></div>
