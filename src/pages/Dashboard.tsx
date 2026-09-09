@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
-import { DollarSign, CheckCircle, XCircle, BarChart3, AlarmClock, Timer, Package, PackageCheck, PiggyBank } from 'lucide-react';
+import { useMemo, useState, type ReactNode } from 'react';
+import { ArrowLeft, CircleAlert, DollarSign, ShoppingCart, Trophy, Truck } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import type { Order, TrackingOrder } from '@/types';
-import { KPICard } from '@/components/shared/KPICard';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { BarChart } from '@/components/charts/BarChart';
 import { DonutChart } from '@/components/charts/DonutChart';
@@ -108,74 +108,64 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
 
   return (
     <div className="space-y-6">
-      {/* Date Range Filter */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-[var(--color-text-muted)]">من</label>
-          <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-44" />
+      <Card className="sticky top-20 z-10 p-3 shadow-sm sm:p-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-sm font-semibold">فترة التحليل</p>
+            <p className="text-xs text-[var(--color-text-muted)]">تطبّق على مؤشرات ورسوم هذه الصفحة</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="sr-only" htmlFor="dashboard-from">من تاريخ</label>
+            <Input id="dashboard-from" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="min-h-10 w-[9.5rem]" />
+            <span className="text-xs text-[var(--color-text-muted)]">إلى</span>
+            <label className="sr-only" htmlFor="dashboard-to">إلى تاريخ</label>
+            <Input id="dashboard-to" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="min-h-10 w-[9.5rem]" />
+            <Button variant="outline" size="sm" className="min-h-10" onClick={() => { const d = new Date(); setDateFrom(toInputDate(d)); setDateTo(toInputDate(d)); }}>اليوم</Button>
+            <Button variant="outline" size="sm" className="min-h-10" onClick={() => { const d = new Date(); const weekAgo = new Date(); weekAgo.setDate(d.getDate() - 6); setDateFrom(toInputDate(weekAgo)); setDateTo(toInputDate(d)); }}>7 أيام</Button>
+            <Button variant="outline" size="sm" className="min-h-10" onClick={() => { const d = new Date(); const monthAgo = new Date(); monthAgo.setDate(d.getDate() - 29); setDateFrom(toInputDate(monthAgo)); setDateTo(toInputDate(d)); }}>30 يوماً</Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-[var(--color-text-muted)]">إلى</label>
-          <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-44" />
-        </div>
-        <Button variant="outline" size="sm" onClick={() => {
-          const d = new Date(); setDateFrom(toInputDate(d)); setDateTo(toInputDate(d));
-        }}>اليوم</Button>
-        <Button variant="outline" size="sm" onClick={() => {
-          const d = new Date(); const weekAgo = new Date(); weekAgo.setDate(d.getDate() - 6);
-          setDateFrom(toInputDate(weekAgo)); setDateTo(toInputDate(d));
-        }}>آخر 7 أيام</Button>
-        <Button variant="outline" size="sm" onClick={() => {
-          const d = new Date(); const monthAgo = new Date(); monthAgo.setDate(d.getDate() - 29);
-          setDateFrom(toInputDate(monthAgo)); setDateTo(toInputDate(d));
-        }}>آخر 30 يوم</Button>
+      </Card>
+
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <PrimaryMetric icon={<ShoppingCart className="h-5 w-5" />} label="الطلبات الجديدة" value={formatNumber(data.ordersToday)} hint="خلال الفترة المحددة" tone="primary" />
+        <PrimaryMetric icon={<Truck className="h-5 w-5" />} label="معدل التوصيل" value={`${data.settledMetrics.deliveryRate.toFixed(1)}%`} hint={`من ${formatNumber(data.settledMetrics.settledCount)} طلب محسوم`} tone="success" />
+        <PrimaryMetric icon={<DollarSign className="h-5 w-5" />} label="إيراد المسلّم" value={formatCurrency(data.periodRevenue)} hint="للطلبات المسلّمة فقط" tone="success" />
+        <PrimaryMetric icon={<CircleAlert className="h-5 w-5" />} label="تحتاج تدخلاً" value={formatNumber(data.pendingOrders)} hint="طلبات غير مؤكدة حالياً" tone="danger" />
       </div>
 
-      {/* Top Product in Period */}
-      {data.topProduct && (
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">🏆</span>
-                <div>
-                  <p className="text-sm text-[var(--color-text-muted)]">المنتج الأكثر مبيعاً في الفترة</p>
-                  <p className="text-lg font-bold">{data.topProduct.name}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-6">
-                <div className="text-center">
-                  <p className="text-sm text-[var(--color-text-muted)]">عدد الطلبات</p>
-                  <p className="text-xl font-bold">{formatNumber(data.topProduct.orders)}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-[var(--color-text-muted)]">الإيراد</p>
-                  <p className="text-xl font-bold">{formatCurrency(data.topProduct.revenue)}</p>
-                </div>
-              </div>
-            </div>
+          <CardHeader className="border-b border-[var(--color-border)]">
+            <div className="flex items-center justify-between gap-3"><div><CardTitle>إجراءات مطلوبة</CardTitle><p className="mt-1 text-xs text-[var(--color-text-muted)]">أهم القوائم التي تستحق المتابعة الآن</p></div><CircleAlert className="h-5 w-5 text-[var(--color-danger)]" /></div>
+          </CardHeader>
+          <CardContent className="divide-y divide-[var(--color-border)] p-0">
+            <ActionRow to="/orders" label="طلبات معلقة غير مؤكدة" value={data.pendingOrders} tone="danger" />
+            <ActionRow to="/tracking" label="حالات تتبع غير مصنّفة" value={data.trackingStatus.others} tone="warning" />
+            <ActionRow to="/tracking" label="مرتجعات في الفترة" value={data.returned} tone="danger" />
           </CardContent>
         </Card>
-      )}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        <KPICard icon={<PackageCheck className="h-5 w-5" />} label="طلبات التتبع (الفترة)" value={formatNumber(data.total)} />
-        <KPICard icon={<DollarSign className="h-5 w-5" />} label="قيمة الطلبات (كل الحالات)" value={formatCurrency(data.orderValue)} color="#378ADD" />
-        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم التوصيل" value={formatNumber(data.delivered)} color="#1D9E75" />
-        <KPICard icon={<XCircle className="h-5 w-5" />} label="المرتجعات" value={formatNumber(data.returned)} color="#E24B4A" />
-        <KPICard icon={<BarChart3 className="h-5 w-5" />} label="متوسط قيمة الطلب" value={formatCurrency(data.avgOrderValue)} color="#7F77DD" />
-        <KPICard icon={<PiggyBank className="h-5 w-5" />} label="قيمة المسلّم دون شحن العميل" value={formatCurrency(data.netRevenue)} />
+        {data.topProduct && <Card className="overflow-hidden bg-[var(--color-primary)] text-white">
+          <CardContent className="flex h-full flex-col justify-between gap-5">
+            <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15"><Trophy className="h-5 w-5" /></span><div><p className="text-xs text-white/70">أفضل منتج في الفترة</p><p className="mt-1 line-clamp-2 font-bold">{data.topProduct.name}</p></div></div>
+            <div className="grid grid-cols-2 gap-3"><div className="rounded-lg bg-white/10 p-3"><p className="text-xs text-white/70">طلبات مسلّمة</p><p className="mt-1 text-lg font-bold tabular-nums">{formatNumber(data.topProduct.orders)}</p></div><div className="rounded-lg bg-white/10 p-3"><p className="text-xs text-white/70">الإيراد</p><p className="mt-1 text-lg font-bold tabular-nums">{formatCurrency(data.topProduct.revenue)}</p></div></div>
+          </CardContent>
+        </Card>}
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        <KPICard icon={<AlarmClock className="h-5 w-5" />} label="طلبات جديدة (الفترة)" value={formatNumber(data.ordersToday)} color="#378ADD" />
-        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="تم التوصيل (الفترة)" value={formatNumber(data.deliveredToday)} color="#1D9E75" />
-        <KPICard icon={<DollarSign className="h-5 w-5" />} label="إيراد (الفترة)" value={formatCurrency(data.periodRevenue)} color="#1D9E75" />
-        <KPICard icon={<Package className="h-5 w-5" />} label="قيد التوصيل" value={formatNumber(data.inTransit + data.inDelivery)} color="#EF9F27" />
-        <KPICard icon={<CheckCircle className="h-5 w-5" />} label="معدل التوصيل (محسوم)" value={data.settledMetrics.deliveryRate.toFixed(1) + '%'} changeLabel={`من ${formatNumber(data.settledMetrics.settledCount)} طلب`} color="#1D9E75" />
-        <KPICard icon={<XCircle className="h-5 w-5" />} label="معدل الإرجاع" value={data.returnRate.toFixed(1) + '%'} color="#E24B4A" />
-        <KPICard icon={<Timer className="h-5 w-5" />} label="معلق (غير مؤكد)" value={formatNumber(data.pendingOrders)} color="#7F77DD" />
-      </div>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">تفاصيل الفترة</CardTitle></CardHeader>
+        <CardContent className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+          <CompactMetric label="طلبات التتبع" value={formatNumber(data.total)} />
+          <CompactMetric label="تم التوصيل" value={formatNumber(data.delivered)} tone="success" />
+          <CompactMetric label="المرتجعات" value={formatNumber(data.returned)} tone="danger" />
+          <CompactMetric label="قيد التوصيل" value={formatNumber(data.inTransit + data.inDelivery)} tone="warning" />
+          <CompactMetric label="قيمة كل الطلبات" value={formatCurrency(data.orderValue)} />
+          <CompactMetric label="قيمة المسلّم دون الشحن" value={formatCurrency(data.netRevenue)} tone="success" />
+          <CompactMetric label="متوسط الطلب المسلّم" value={formatCurrency(data.avgOrderValue)} />
+        </CardContent>
+      </Card>
 
       {/* Charts Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -351,4 +341,40 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
       </Card>
     </div>
   );
+}
+
+function PrimaryMetric({ icon, label, value, hint, tone }: { icon: ReactNode; label: string; value: string; hint: string; tone: 'primary' | 'success' | 'danger' }) {
+  const colors = {
+    primary: 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]',
+    success: 'bg-[var(--color-success)]/10 text-[var(--color-success)]',
+    danger: 'bg-[var(--color-danger)]/10 text-[var(--color-danger)]',
+  };
+  return <Card>
+    <CardContent className="flex flex-col gap-4 p-0 sm:flex-row sm:items-center">
+      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${colors[tone]}`}>{icon}</span>
+      <span className="min-w-0">
+        <span className="block truncate text-xs font-medium text-[var(--color-text-muted)]">{label}</span>
+        <span className="mt-1 block truncate text-xl font-bold tabular-nums sm:text-2xl">{value}</span>
+        <span className="mt-1 hidden truncate text-[11px] text-[var(--color-text-muted)] sm:block">{hint}</span>
+      </span>
+    </CardContent>
+  </Card>;
+}
+
+function ActionRow({ to, label, value, tone }: { to: string; label: string; value: number; tone: 'danger' | 'warning' }) {
+  return <Link to={to} className="flex min-h-14 items-center justify-between gap-4 px-1 py-3 transition-colors hover:text-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">
+    <span className="text-sm font-medium">{label}</span>
+    <span className="flex items-center gap-3">
+      <span className={tone === 'danger' ? 'rounded-full bg-[var(--color-danger)]/10 px-2.5 py-1 text-xs font-bold text-[var(--color-danger)] tabular-nums' : 'rounded-full bg-[var(--color-warning)]/10 px-2.5 py-1 text-xs font-bold text-[var(--color-warning)] tabular-nums'}>{formatNumber(value)}</span>
+      <ArrowLeft className="h-4 w-4 text-[var(--color-text-muted)]" />
+    </span>
+  </Link>;
+}
+
+function CompactMetric({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'success' | 'danger' | 'warning' }) {
+  const valueColor = tone === 'success' ? 'text-[var(--color-success)]' : tone === 'danger' ? 'text-[var(--color-danger)]' : tone === 'warning' ? 'text-[var(--color-warning)]' : 'text-[var(--color-text)]';
+  return <div className="rounded-xl bg-gray-50 p-3 dark:bg-gray-800/50">
+    <p className="truncate text-[11px] text-[var(--color-text-muted)]">{label}</p>
+    <p className={`mt-1 truncate text-base font-bold tabular-nums ${valueColor}`}>{value}</p>
+  </div>;
 }
