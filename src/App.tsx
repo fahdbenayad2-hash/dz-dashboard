@@ -27,6 +27,23 @@ const DailyTrends = lazy(() => import('@/features/analytics/DailyTrends').then(m
 const RiskDashboard = lazy(() => import('@/features/analytics/RiskDashboard').then(module => ({ default: module.RiskDashboard })));
 const NotificationSettings = lazy(() => import('@/features/analytics/NotificationSettings').then(module => ({ default: module.NotificationSettings })));
 
+function preloadNavigationPages() {
+  return Promise.allSettled([
+    import('@/pages/Dashboard'),
+    import('@/pages/Products'),
+    import('@/pages/Agents'),
+    import('@/pages/Orders'),
+    import('@/pages/Tracking'),
+    import('@/pages/RiskCenter'),
+    import('@/pages/MonthlyReport'),
+    import('@/pages/YearlyReport'),
+    import('@/pages/ProductAnalysis'),
+    import('@/features/analytics/DailyTrends'),
+    import('@/features/analytics/RiskDashboard'),
+    import('@/features/analytics/NotificationSettings'),
+  ]);
+}
+
 const fetchSyncMetadata = async () => { const data = await readPublishedData(); return [{ completedAt: data.completedAt, generation: data.generation }]; };
 
 export default function App() {
@@ -100,6 +117,12 @@ function AuthenticatedApp({ desktopSidebarCollapsed, setDesktopSidebarCollapsed,
   const unavailable = !ordersUpdated || !trackingUpdated;
 
   useAutoSnapshot(trackingOrders, !trackingError && !!trackingUpdated && now - trackingUpdated.getTime() < 120000);
+
+  useEffect(() => {
+    if (loading || trackingLoading) return;
+    const preloadTimer = window.setTimeout(() => { void preloadNavigationPages(); }, 500);
+    return () => window.clearTimeout(preloadTimer);
+  }, [loading, trackingLoading]);
 
   if (loading || trackingLoading) {
     return (
