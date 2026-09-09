@@ -33,7 +33,8 @@ export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
   useEffect(() => { clearLegacyTelegramSecrets(); void checkSession().then(value => { setAuthenticated(value); setChecking(false); }); }, []);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(() => localStorage.getItem('dz-sidebar-collapsed') === 'true');
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [dark, setDark] = useState(() => {
     const stored = localStorage.getItem('dz-dark');
     if (stored !== null) return stored === 'true';
@@ -48,6 +49,10 @@ export default function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [dark]);
+
+  useEffect(() => {
+    localStorage.setItem('dz-sidebar-collapsed', String(desktopSidebarCollapsed));
+  }, [desktopSidebarCollapsed]);
 
   const handleLogout = () => {
     void logout().then(() => setAuthenticated(false)).catch(() => alert("تعذّر إنهاء الجلسة. أعد المحاولة."));
@@ -66,12 +71,22 @@ export default function App() {
     );
   }
 
-  return <AuthenticatedApp sidebarCollapsed={sidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} dark={dark} setDark={setDark} onLogout={handleLogout} />;
+  return <AuthenticatedApp
+    desktopSidebarCollapsed={desktopSidebarCollapsed}
+    setDesktopSidebarCollapsed={setDesktopSidebarCollapsed}
+    mobileSidebarOpen={mobileSidebarOpen}
+    setMobileSidebarOpen={setMobileSidebarOpen}
+    dark={dark}
+    setDark={setDark}
+    onLogout={handleLogout}
+  />;
 }
 
-function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark, onLogout }: {
-  sidebarCollapsed: boolean;
-  setSidebarCollapsed: (v: boolean | ((prev: boolean) => boolean)) => void;
+function AuthenticatedApp({ desktopSidebarCollapsed, setDesktopSidebarCollapsed, mobileSidebarOpen, setMobileSidebarOpen, dark, setDark, onLogout }: {
+  desktopSidebarCollapsed: boolean;
+  setDesktopSidebarCollapsed: (v: boolean | ((prev: boolean) => boolean)) => void;
+  mobileSidebarOpen: boolean;
+  setMobileSidebarOpen: (v: boolean) => void;
   dark: boolean;
   setDark: (v: boolean | ((prev: boolean) => boolean)) => void;
   onLogout: () => void;
@@ -82,7 +97,6 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(timer); }, []);
   const refresh = () => { void Promise.all([refreshOrders(), refreshTracking(), sync.refresh()]); };
-  const lastUpdated = ordersUpdated && trackingUpdated ? new Date(Math.min(ordersUpdated.getTime(), trackingUpdated.getTime())) : null;
   const unavailable = !ordersUpdated || !trackingUpdated;
 
   useAutoSnapshot(trackingOrders, !trackingError && !!trackingUpdated && now - trackingUpdated.getTime() < 120000);
@@ -101,22 +115,33 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
   return (
     <BrowserRouter>
       <div dir="rtl" className="flex min-h-screen bg-[var(--color-bg)]">
-        <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(c => !c)} onLogout={onLogout} />
+        <Sidebar
+          desktopCollapsed={desktopSidebarCollapsed}
+          mobileOpen={mobileSidebarOpen}
+          onToggleDesktop={() => setDesktopSidebarCollapsed(value => !value)}
+          onCloseMobile={() => setMobileSidebarOpen(false)}
+          onLogout={onLogout}
+        />
         <div
           className={classNames(
             'flex-1 flex flex-col min-w-0 overflow-x-hidden transition-all duration-300',
-            sidebarCollapsed ? 'md:mr-16' : 'md:mr-64',
+            desktopSidebarCollapsed ? 'md:mr-20' : 'md:mr-64',
           )}
         >
           <TopBar
             dark={dark}
             onToggleDark={() => setDark(d => !d)}
-            lastUpdated={lastUpdated}
             onRefresh={refresh}
             loading={ordersRefreshing || trackingRefreshing}
-            onToggleSidebar={() => setSidebarCollapsed(c => !c)}
+            onOpenSidebar={() => setMobileSidebarOpen(true)}
+            completedAt={sync.data[0]?.completedAt}
+            ordersUpdated={ordersUpdated}
+            trackingUpdated={trackingUpdated}
+            ordersError={ordersError}
+            trackingError={trackingError}
+            now={now}
           />
-          <main className="flex-1 p-6 overflow-x-hidden">
+          <main className="flex-1 overflow-x-hidden p-3 sm:p-4 lg:p-6">
             {(ordersError || trackingError) && (
               <div role="alert" className="mb-6 rounded-xl border border-red-400 bg-red-50 p-4 text-red-900">
                 <p className="font-semibold">تعذّر تحديث {ordersError && trackingError ? 'الطلبات والتتبع' : ordersError ? 'الطلبات' : 'التتبع'}.</p>
@@ -124,8 +149,6 @@ function AuthenticatedApp({ sidebarCollapsed, setSidebarCollapsed, dark, setDark
               </div>
             )}
             {sync.data[0]?.generation === 'demo-synthetic' && <p role="status" className="mb-4 rounded bg-amber-100 p-3 text-amber-950">نسخة اختبار — بيانات اصطناعية وليست طلبات المتجر</p>}
-            {sync.data[0] && <p className="mb-2 text-sm text-[var(--color-text-muted)]">آخر مزامنة مكتملة: {new Date(sync.data[0].completedAt).toLocaleString('ar-DZ')}{now - new Date(sync.data[0].completedAt).getTime() > 6 * 3600000 ? ' — البيانات أقدم من 6 ساعات' : ''}</p>}
-            <p className="mb-4 text-xs text-[var(--color-text-muted)]">المصدر: Google Sheets. وقت القراءة لا يثبت اكتمال المزامنة مع Octomatic. تاريخ التتبع ليس تاريخ تسليم مؤكداً.</p>
             {!unavailable && <Suspense fallback={<p role="status">جاري فتح الصفحة...</p>}><Routes>
               <Route path="/" element={<ProtectedRoute><Dashboard orders={orders} trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/products" element={<ProtectedRoute><Products trackingOrders={trackingOrders} /></ProtectedRoute>} />
