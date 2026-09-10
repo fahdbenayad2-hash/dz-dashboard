@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { classifyTrackingStatus, normalizeStatus } from '../status';
-import { getAgentDataTracking, getProductPerformance, getTrackingMetrics, getYearlyTopProducts, getYearlyTopWilayas, getYearComparison } from '../dashboardMetrics';
+import { getAgentDataTracking, getDeliveredProductSummary, getPeriodOrders, getProductPerformance, getTrackingMetrics, getYearlyTopProducts, getYearlyTopWilayas, getYearComparison } from '../dashboardMetrics';
 import { analyzeProductPeriod, buildFinancialAnalysis, buildWilayaAnalysis } from '../financialEngine';
 import { fetchOrders } from '../sheetsApi';
-import type { TrackingOrder } from '@/types';
+import type { Order, TrackingOrder } from '@/types';
 
 const order = (
   statusCategory: TrackingOrder['statusCategory'],
@@ -48,6 +48,20 @@ describe('data integrity regressions', () => {
     expect(metrics.deliveredRevenue).toBe(5000);
     expect(metrics.netRevenue).toBe(4500);
     expect(metrics.avgOrderValue).toBe(5000);
+  });
+  it('counts every created order in the selected dashboard period', () => {
+    const base = { id: 1, date: '2026-06-10T12:00:00', customer: '', phone: '', wilaya: '', product: '', total: 1000, delivery: 100, agent: '' };
+    const orders = ['Confirmed', 'Failed', 'Pending', 'Waiting'].map((status, index) => ({ ...base, id: index + 1, status })) as Order[];
+    expect(getPeriodOrders(orders, new Date('2026-06-10T00:00:00'), new Date('2026-06-10T23:59:59')).ordersToday).toBe(4);
+  });
+  it('splits delivered multi-product baskets in dashboard product summaries', () => {
+    const basket = order('delivered', undefined, { total: 9500, delivery: 500, product: '[سلة متعددة المنتجات]', items: [
+      { productId: 'a', name: 'A', quantity: 1, unitPrice: 4000 },
+      { productId: 'b', name: 'B', quantity: 1, unitPrice: 5000 },
+    ] });
+    const summary = getDeliveredProductSummary([basket]);
+    expect(summary.map(item => item.name).sort()).toEqual(['A', 'B']);
+    expect(summary.reduce((sum, item) => sum + item.revenue, 0)).toBe(9500);
   });
   it('uses delivered revenue and settled rates for agents and products', () => {
     const records = [order('delivered'), order('returned', undefined, { total: 9000 }), order('transit', undefined, { total: 12000 })];

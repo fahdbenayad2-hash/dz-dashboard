@@ -199,13 +199,23 @@ export function getWilayaCountsTracking(tracking: TrackingOrder[]) {
 }
 
 export function getProductCountsTracking(tracking: TrackingOrder[]) {
+  return getDeliveredProductSummary(tracking)
+    .map(item => [item.name, item.revenue] as [string, number])
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+}
+
+export function getDeliveredProductSummary(tracking: TrackingOrder[]) {
   const map = new Map<string, number>();
+  const orders = new Map<string, number>();
   expandProductOrders(tracking)
     .filter(t => t.statusCategory === 'delivered')
     .forEach(t => {
-      if (t.product) map.set(t.product, (map.get(t.product) || 0) + t.total);
+      if (!t.product) return;
+      map.set(t.product, (map.get(t.product) || 0) + t.total);
+      orders.set(t.product, (orders.get(t.product) || 0) + 1);
     });
-  return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+  return [...map.entries()].map(([name, revenue]) => ({ name, revenue, orders: orders.get(name) || 0 }));
 }
 
 export function getProductOrderCountsTracking(tracking: TrackingOrder[]) {
@@ -548,8 +558,6 @@ export function getAgentDailyVsMonthlyAvg(tracking: TrackingOrder[], agentName: 
 
 export function getPeriodOrders(orders: Order[], from: Date, to: Date) {
   const filtered = orders.filter(o => {
-    const status = normalizeStatus(o.status);
-    if (status !== 'Pending' && status !== 'Waiting') return false;
     const d = parseOrderDate(o.date);
     return d && d >= from && d <= to;
   });

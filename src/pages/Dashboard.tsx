@@ -14,7 +14,7 @@ import { Select } from '@/components/ui/select';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import {
   getOrderMetrics, normalizeStatus,
-  getTrackingMetrics, getTrackingStatusDistribution, getAgentCountsTracking, getWilayaCountsTracking, getProductCountsTracking, getMonthlyRevenueTracking, getDailyRevenueTracking,
+  getTrackingMetrics, getTrackingStatusDistribution, getAgentCountsTracking, getWilayaCountsTracking, getDeliveredProductSummary, getMonthlyRevenueTracking, getDailyRevenueTracking,
   getPeriodOrders, getPeriodDelivered, getPeriodRevenue, filterByPeriod,
   getSettledMetrics,
 } from '@/lib/dashboardMetrics';
@@ -36,26 +36,20 @@ function useDashboardData(orders: Order[], tracking: TrackingOrder[], fromStr: s
     const trackingStatus = getTrackingStatusDistribution(periodTracking);
     const agentData = getAgentCountsTracking(periodTracking);
     const wilayaData = getWilayaCountsTracking(periodTracking);
-    const productData = getProductCountsTracking(periodTracking);
+    const productSummary = getDeliveredProductSummary(periodTracking);
+    const productData = [...productSummary]
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10)
+      .map(item => [item.name, item.revenue] as [string, number]);
     const monthlyData = getMonthlyRevenueTracking(tracking);
     const daysInPeriod = Math.max(Math.floor((dateTo.getTime() - dateFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1, 1);
-    const revenueTrend = getDailyRevenueTracking(periodTracking, daysInPeriod, dateTo);
+    const trendDays = Math.min(daysInPeriod, 31);
+    const revenueTrend = getDailyRevenueTracking(periodTracking, trendDays, dateTo);
     const settledMetrics = getSettledMetrics(periodTracking);
 
     // Best product in period
-    const prodMap = new Map<string, { orders: number; revenue: number }>();
-    periodTracking
-      .filter(t => t.statusCategory === 'delivered' && t.product)
-      .forEach(t => {
-        const e = prodMap.get(t.product!) || { orders: 0, revenue: 0 };
-        e.orders++;
-        e.revenue += t.total;
-        prodMap.set(t.product!, e);
-      });
-    const topProduct = [...prodMap.entries()]
-      .sort((a, b) => b[1].orders - a[1].orders)
-      .slice(0, 1)
-      .map(([name, d]) => ({ name, ...d }))[0] || null;
+    const topProduct = [...productSummary]
+      .sort((a, b) => b.orders - a.orders || b.revenue - a.revenue)[0] || null;
 
 
     return {
@@ -73,7 +67,8 @@ function useDashboardData(orders: Order[], tracking: TrackingOrder[], fromStr: s
       last14Days: revenueTrend.map(d => d.date),
       dailyRevenue: revenueTrend.map(d => d.revenue),
       dailyOrders: revenueTrend.map(d => d.orders),
-      pendingOrders: metrics.pendingOrders,
+      actionableOrders: metrics.pendingOrders + metrics.waitingOrders,
+      trendDays,
     };
   }, [orders, tracking, fromStr, toStr]);
 }
@@ -128,10 +123,10 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
       </Card>
 
       <div className="overview-metrics">
-        <PrimaryMetric icon={<ShoppingCart className="h-5 w-5" />} label="الطلبات الجديدة" value={formatNumber(data.ordersToday)} hint="خلال الفترة المحددة" tone="primary" />
+        <PrimaryMetric icon={<ShoppingCart className="h-5 w-5" />} label="الطلبات المنشأة" value={formatNumber(data.ordersToday)} hint="كل الطلبات خلال الفترة" tone="primary" />
         <PrimaryMetric icon={<Truck className="h-5 w-5" />} label="معدل التوصيل" value={`${data.settledMetrics.deliveryRate.toFixed(1)}%`} hint={`من ${formatNumber(data.settledMetrics.settledCount)} طلب محسوم`} tone="success" />
         <PrimaryMetric icon={<DollarSign className="h-5 w-5" />} label="إيراد المسلّم" value={formatCurrency(data.periodRevenue)} hint="للطلبات المسلّمة فقط" tone="success" />
-        <PrimaryMetric icon={<CircleAlert className="h-5 w-5" />} label="تحتاج تدخلاً" value={formatNumber(data.pendingOrders)} hint="طلبات غير مؤكدة حالياً" tone="danger" />
+        <PrimaryMetric icon={<CircleAlert className="h-5 w-5" />} label="تحتاج تدخلاً" value={formatNumber(data.actionableOrders)} hint="معلقة أو في الانتظار حالياً" tone="danger" />
       </div>
 
       <div className="overview-decisions">
@@ -140,7 +135,7 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
             <div className="flex items-center justify-between gap-3"><div><CardTitle>إجراءات مطلوبة</CardTitle><p className="mt-1 text-xs text-[var(--color-text-muted)]">أهم القوائم التي تستحق المتابعة الآن</p></div><CircleAlert className="h-5 w-5 text-[var(--color-danger)]" /></div>
           </CardHeader>
           <CardContent className="divide-y divide-[var(--color-border)] p-0">
-            <ActionRow to="/orders" label="طلبات معلقة غير مؤكدة" value={data.pendingOrders} tone="danger" />
+            <ActionRow to="/orders" label="طلبات معلقة أو في الانتظار" value={data.actionableOrders} tone="danger" />
             <ActionRow to="/tracking" label="حالات تتبع غير مصنّفة" value={data.trackingStatus.others} tone="warning" />
             <ActionRow to="/tracking" label="مرتجعات في الفترة" value={data.returned} tone="danger" />
           </CardContent>
@@ -157,11 +152,11 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
       <Card>
         <CardHeader><CardTitle className="text-base">تفاصيل الفترة</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-          <CompactMetric label="طلبات التتبع" value={formatNumber(data.total)} />
+          <CompactMetric label="حركات التتبع" value={formatNumber(data.total)} />
           <CompactMetric label="تم التوصيل" value={formatNumber(data.delivered)} tone="success" />
           <CompactMetric label="المرتجعات" value={formatNumber(data.returned)} tone="danger" />
           <CompactMetric label="قيد التوصيل" value={formatNumber(data.inTransit + data.inDelivery)} tone="warning" />
-          <CompactMetric label="قيمة كل الطلبات" value={formatCurrency(data.orderValue)} />
+          <CompactMetric label="قيمة طلبات التتبع" value={formatCurrency(data.orderValue)} />
           <CompactMetric label="قيمة المسلّم دون الشحن" value={formatCurrency(data.netRevenue)} tone="success" />
           <CompactMetric label="متوسط الطلب المسلّم" value={formatCurrency(data.avgOrderValue)} />
         </CardContent>
@@ -173,13 +168,13 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
           <CardHeader><CardTitle>أداء الوكلاء</CardTitle></CardHeader>
           <CardContent>
             <div className="h-72">
-              {data.agentData.length > 0 && (
+              {data.agentData.length > 0 ? (
                 <BarChart
                   labels={data.agentData.map(d => d[0])}
                   values={data.agentData.map(d => d[1])}
                   color="#378ADD"
                 />
-              )}
+              ) : <EmptyChart />}
             </div>
           </CardContent>
         </Card>
@@ -187,12 +182,12 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
           <CardHeader><CardTitle>حالة التتبع</CardTitle></CardHeader>
           <CardContent>
             <div className="h-72">
-              {(data.trackingStatus.delivered + data.trackingStatus.returned + data.trackingStatus.inTransit + data.trackingStatus.inDelivery) > 0 && (
+              {(data.trackingStatus.delivered + data.trackingStatus.returned + data.trackingStatus.inTransit + data.trackingStatus.inDelivery + data.trackingStatus.others) > 0 ? (
                 <DonutChart
                   labels={['تم التوصيل', 'مرتجع', 'قيد التوصيل', 'جاري التوزيع', 'أخرى']}
                   values={[data.trackingStatus.delivered, data.trackingStatus.returned, data.trackingStatus.inTransit, data.trackingStatus.inDelivery, data.trackingStatus.others]}
                 />
-              )}
+              ) : <EmptyChart />}
             </div>
           </CardContent>
         </Card>
@@ -204,14 +199,14 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
           <CardHeader><CardTitle>أفضل 15 ولاية</CardTitle></CardHeader>
           <CardContent>
             <div className="h-72">
-              {data.wilayaData.length > 0 && (
+              {data.wilayaData.length > 0 ? (
                 <BarChart
                   labels={data.wilayaData.map(d => d[0])}
                   values={data.wilayaData.map(d => d[1])}
                   color="#1D9E75"
                   horizontal
                 />
-              )}
+              ) : <EmptyChart />}
             </div>
           </CardContent>
         </Card>
@@ -219,13 +214,13 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
           <CardHeader><CardTitle>أفضل 10 منتجات (حسب الإيراد)</CardTitle></CardHeader>
           <CardContent>
             <div className="h-72">
-              {data.productData.length > 0 && (
+              {data.productData.length > 0 ? (
                 <BarChart
                   labels={data.productData.map(d => d[0].length > 15 ? d[0].slice(0, 15) + '...' : d[0])}
                   values={data.productData.map(d => d[1])}
                   color="#7F77DD"
                 />
-              )}
+              ) : <EmptyChart />}
             </div>
           </CardContent>
         </Card>
@@ -234,7 +229,7 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
       {/* Revenue Trend + Monthly Trend */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
-          <CardHeader><CardTitle>اتجاه الإيرادات (آخر 14 يوم)</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{data.trendDays === 31 ? 'اتجاه الإيرادات (آخر 31 يوماً من الفترة)' : 'اتجاه الإيرادات خلال الفترة'}</CardTitle></CardHeader>
           <CardContent>
             <div className="h-72">
               <LineChart
@@ -359,6 +354,10 @@ function PrimaryMetric({ icon, label, value, hint, tone }: { icon: ReactNode; la
       </span>
     </CardContent>
   </Card>;
+}
+
+function EmptyChart() {
+  return <div className="flex h-full items-center justify-center text-sm text-[var(--color-text-muted)]">لا توجد بيانات في الفترة المحددة</div>;
 }
 
 function ActionRow({ to, label, value, tone }: { to: string; label: string; value: number; tone: 'danger' | 'warning' }) {
