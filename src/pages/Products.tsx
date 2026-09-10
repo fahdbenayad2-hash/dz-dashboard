@@ -61,7 +61,7 @@ export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }
 
   return (
     <div className="space-y-4">
-      <p className="text-xs leading-6 text-[var(--color-text-muted)]">كل منتج داخل السلة محسوب باسمه وكمّيته. عدد الطلبات فريد في الإجمالي؛ قد يظهر الطلب في عدة منتجات. إيراد كل منتج يشمل حصته النسبية من شحن السلة وأي تعديل على مبلغها. هذه الحصص توزيع حسابي وليست أسعاراً مسجلة منفصلة.</p>
+      <p className="text-xs leading-6 text-[var(--color-text-muted)]">كل منتج داخل السلة محسوب باسمه وكمّيته. عدد الطلبات فريد في الإجمالي؛ قد يظهر الطلب في عدة منتجات. إيراد كل منتج يشمل حصته النسبية من شحن السلة وأي تعديل على مبلغها. الرمز ≥ يعني أن سلة واحدة على الأقل ينقصها سعر سطر، لذلك الرقم حد أدنى موثوق وليس إجمالياً مخمناً.</p>
       {/* Tabs */}
       <div className="flex items-center gap-1 rounded-lg bg-gray-100 dark:bg-gray-800/50 p-1 w-fit">
         <button
@@ -131,7 +131,7 @@ export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }
                     </div>
                     <div className="text-center">
                       <p className="text-sm text-[var(--color-text-muted)]">الإيراد</p>
-                      <p className="text-xl font-bold">{formatCurrency(top.revenue)}</p>
+                      <p className="text-xl font-bold">{top.revenueComplete ? '' : '≥ '}{formatCurrency(top.revenue)}</p>
                     </div>
                     <div className="text-center">
                       <p className="text-sm text-[var(--color-text-muted)]">معدل التوصيل</p>
@@ -191,7 +191,7 @@ export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }
                         <TableCell>
                           <Badge variant={badgeVariant}>{p.deliveryRate.toFixed(1)}%</Badge>
                         </TableCell>
-                        <TableCell className="tabular-nums font-medium">{formatCurrency(p.revenue)}</TableCell>
+                        <TableCell className="tabular-nums font-medium">{p.revenueComplete ? '' : '≥ '}{formatCurrency(p.revenue)}</TableCell>
                         <TableCell className="tabular-nums">{formatCurrency(p.avgValue)}</TableCell>
                       </TableRow>
                     );
@@ -227,7 +227,7 @@ export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }
                     <p className="font-medium text-[var(--color-text)] break-words">{p.name}</p>
                     <div className="flex justify-between mt-1 text-xs text-[var(--color-text-muted)]">
                       <span>{p.orders} طلب</span>
-                      <span>{formatCurrency(p.revenue)}</span>
+                      <span>{p.revenueComplete ? '' : '≥ '}{formatCurrency(p.revenue)}</span>
                     </div>
                   </button>
                 ))}

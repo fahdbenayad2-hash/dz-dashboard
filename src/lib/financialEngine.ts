@@ -158,6 +158,7 @@ export function analyzeProductPeriod(
   const deliveryRate     = settledCount > 0 ? (delivered.length / settledCount) * 100 : 0;
 
   const quantityDataComplete  = periodOrders.every(t => typeof t.quantity === 'number');
+  const revenueDataComplete   = periodOrders.every(t => !t.itemDataMissing);
   const units                 = periodOrders.reduce((s, t) => s + (t.quantity ?? 0), 0);
   const deliveredUnits        = delivered.reduce((s, t) => s + (t.quantity ?? 0), 0);
   const returnedUnits         = returned.reduce((s, t) => s + (t.quantity ?? 0), 0);
@@ -204,7 +205,7 @@ export function analyzeProductPeriod(
 
   return {
     totalOrders: periodOrders.length,
-    units, deliveredUnits, returnedUnits, quantityDataComplete,
+    units, deliveredUnits, returnedUnits, quantityDataComplete, revenueDataComplete,
     delivered: delivered.length,
     returned: returned.length,
     inProgress: inProg.length,
@@ -259,7 +260,9 @@ export function buildFinancialAnalysis(
   const reasons: string[] = [];
   const actions: string[] = [];
 
-  if (trueNetMargin >= 20 && period.deliveryRate >= 65 && profitPerUnit > 0) {
+  if (!period.revenueDataComplete) {
+    decision = 'monitor';
+  } else if (trueNetMargin >= 20 && period.deliveryRate >= 65 && profitPerUnit > 0) {
     decision = 'scale';
   } else if (trueNetMargin >= 8 && period.deliveryRate >= 50) {
     decision = 'optimize';
@@ -287,6 +290,8 @@ export function buildFinancialAnalysis(
     reasons.push(`معدل الإرجاع مرتفع ${period.cancellationRate.toFixed(1)}%`);
   if (period.settledCount < 10)
     reasons.push(`عينة صغيرة — ${period.settledCount} طلب محسوم`);
+  if (!period.revenueDataComplete)
+    reasons.push('سعر سطر منتج ناقص في المصدر — الربح المعروض حد أدنى ولا يكفي لقرار مالي');
   if (cpa > 0)
     reasons.push(`CPA = ${cpa.toLocaleString('ar-DZ')} دج`);
 

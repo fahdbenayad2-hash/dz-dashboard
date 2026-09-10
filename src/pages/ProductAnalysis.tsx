@@ -143,6 +143,7 @@ function ProductAnalysisView({
       </div>
       <p className="text-xs leading-5 text-[var(--color-text-muted)]">
         الوحدات: {period.quantityDataComplete ? `${formatNumber(period.units)} إجمالاً و${formatNumber(period.deliveredUnits)} مسلّمة` : 'تفاصيل الكمية ناقصة لبعض الطلبات؛ تكلفة الوحدة تُحسب مؤقتاً على أساس طلب واحد لتلك السجلات'}.
+        {!period.revenueDataComplete && ' توجد سلة بسعر سطر ناقص؛ نتائج الإيراد والربح حدود دنيا ولا يجوز استعمالها للتوسعة.'}
       </p>
 
       {/* KPI Cards — صف 2: الماليات الموسعة */}

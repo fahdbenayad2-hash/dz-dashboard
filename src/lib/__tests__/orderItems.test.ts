@@ -36,4 +36,14 @@ describe('Octomatic line items', () => {
     expect(row.product).toBe('[سلة متعددة المنتجات]');
     expect(row.itemDataMissing).toBe(true);
   });
+  it('still separates product names when a basket line price is missing', () => {
+    const items = parseOrderItems(JSON.stringify([
+      { product_id: 1, price: null, quantity: 1, product: { name: 'A' } },
+      { product_id: 2, price: '2000', quantity: 2, product: { name: 'B' } },
+    ]));
+    const rows = expandProductOrders([tracking({ items })]);
+    expect(rows.map(row => row.product)).toEqual(['A', 'B']);
+    expect(rows.map(row => row.quantity)).toEqual([1, 2]);
+    expect(rows.every(row => row.itemDataMissing && row.total === 0)).toBe(true);
+  });
 });

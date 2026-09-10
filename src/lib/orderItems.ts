@@ -32,17 +32,19 @@ export function expandProductOrders(orders: TrackingOrder[]): TrackingOrder[] {
   return orders.flatMap<TrackingOrder>(order => {
     const items = order.items ?? [];
     const subtotal = itemSubtotal(items);
-    if (!items.length || subtotal === null || subtotal <= 0) return [{ ...order, items: undefined,
-      product: items.length ? itemDescription(items, order.product) : order.product,
-      quantity: items.length === 1 ? items[0].quantity ?? undefined : undefined,
-      itemDataMissing: true }];
+    if (!items.length) return [{ ...order, items: undefined, product: order.product, itemDataMissing: true }];
     const grouped = new Map<string, { name: string; quantity: number; amount: number }>();
     for (const item of items) {
       const key = item.productId || item.name;
       const row = grouped.get(key) ?? { name: item.name, quantity: 0, amount: 0 };
-      row.quantity += item.quantity!; row.amount += item.unitPrice! * item.quantity!;
+      row.quantity += item.quantity ?? 0;
+      row.amount += item.unitPrice !== null && item.quantity !== null ? item.unitPrice * item.quantity : 0;
       grouped.set(key, row);
     }
+    if (subtotal === null || subtotal <= 0) return [...grouped.values()].map(item => ({
+      ...order, product: item.name, items: undefined, quantity: item.quantity || undefined,
+      total: 0, delivery: 0, itemDataMissing: true, basketAllocated: grouped.size > 1,
+    }));
     let totalLeft = Math.round(order.total * 100), shippingLeft = Math.round(order.delivery * 100);
     return [...grouped.values()].map((item, index) => {
       const last = index === grouped.size - 1;

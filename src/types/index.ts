@@ -138,6 +138,7 @@ export interface ProductPeriodData {
   deliveredUnits: number;
   returnedUnits: number;
   quantityDataComplete: boolean;
+  revenueDataComplete: boolean;
   delivered: number;
   returned: number;
   inProgress: number;

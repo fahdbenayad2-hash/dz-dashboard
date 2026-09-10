@@ -219,10 +219,10 @@ export function getProductOrderCountsTracking(tracking: TrackingOrder[]) {
 }
 
 export function getProductPerformance(tracking: TrackingOrder[]) {
-  const map = new Map<string, { orders: number; delivered: number; returned: number; deliveredRevenue: number; units: number; deliveredUnits: number; unknownQuantity: boolean }>();
+  const map = new Map<string, { orders: number; delivered: number; returned: number; deliveredRevenue: number; units: number; deliveredUnits: number; unknownQuantity: boolean; incompleteRevenue: boolean }>();
   expandProductOrders(tracking).forEach(t => {
     if (!t.product) return;
-    const current = map.get(t.product) || { orders: 0, delivered: 0, returned: 0, deliveredRevenue: 0, units: 0, deliveredUnits: 0, unknownQuantity: false };
+    const current = map.get(t.product) || { orders: 0, delivered: 0, returned: 0, deliveredRevenue: 0, units: 0, deliveredUnits: 0, unknownQuantity: false, incompleteRevenue: false };
     current.orders++;
     current.units += t.quantity ?? 0;
     current.unknownQuantity ||= t.quantity === undefined;
@@ -230,6 +230,7 @@ export function getProductPerformance(tracking: TrackingOrder[]) {
       current.delivered++;
       current.deliveredRevenue += t.total;
       current.deliveredUnits += t.quantity ?? 0;
+      current.incompleteRevenue ||= !!t.itemDataMissing;
     }
     if (t.statusCategory === 'returned') current.returned++;
     map.set(t.product, current);
@@ -246,6 +247,7 @@ export function getProductPerformance(tracking: TrackingOrder[]) {
         units: values.unknownQuantity ? null : values.units,
         deliveredUnits: values.unknownQuantity ? null : values.deliveredUnits,
         revenue: values.deliveredRevenue,
+        revenueComplete: !values.incompleteRevenue,
         deliveryRate: settled > 0 ? values.delivered / settled * 100 : 0,
         avgValue: values.delivered > 0 ? values.deliveredRevenue / values.delivered : 0,
       };
@@ -256,7 +258,7 @@ export function getProductPerformance(tracking: TrackingOrder[]) {
     products,
     top: products[0] || null,
     totalOrders: tracking.length,
-    deliveredRevenue: products.reduce((sum, product) => sum + product.revenue, 0),
+    deliveredRevenue: tracking.filter(order => order.statusCategory === 'delivered').reduce((sum, order) => sum + order.total, 0),
   };
 }
 
