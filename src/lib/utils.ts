@@ -1,5 +1,5 @@
 export function formatCurrency(amount: number): string {
-  return amount.toLocaleString('ar-DZ') + ' د.ج';
+  return amount.toLocaleString('ar-DZ', { maximumFractionDigits: 2 }) + ' د.ج';
 }
 
 export function formatPercent(value: number): string {
