@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Sidebar } from '@/components/shared/Sidebar';
 import { TopBar } from '@/components/shared/TopBar';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
@@ -34,6 +34,12 @@ function preloadNavigationPages() {
     import('@/pages/Reports'),
     import('@/features/analytics/NotificationSettings'),
   ]);
+}
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => { window.scrollTo({ top: 0, left: 0 }); }, [pathname]);
+  return null;
 }
 
 const fetchSyncMetadata = async () => { const data = await readPublishedData(); return [{ completedAt: data.completedAt, generation: data.generation }]; };
@@ -129,6 +135,7 @@ function AuthenticatedApp({ desktopSidebarCollapsed, setDesktopSidebarCollapsed,
 
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <div dir="rtl" className="flex min-h-screen bg-[var(--color-bg)]">
         <Sidebar
           desktopCollapsed={desktopSidebarCollapsed}
