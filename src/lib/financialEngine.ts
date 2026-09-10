@@ -157,14 +157,18 @@ export function analyzeProductPeriod(
   const cancellationRate = settledCount > 0 ? (returned.length / settledCount) * 100 : 0;
   const deliveryRate     = settledCount > 0 ? (delivered.length / settledCount) * 100 : 0;
 
+  const quantityDataComplete  = periodOrders.every(t => typeof t.quantity === 'number');
+  const units                 = periodOrders.reduce((s, t) => s + (t.quantity ?? 0), 0);
+  const deliveredUnits        = delivered.reduce((s, t) => s + (t.quantity ?? 0), 0);
+  const returnedUnits         = returned.reduce((s, t) => s + (t.quantity ?? 0), 0);
   const grossRevenue          = delivered.reduce((s, t) => s + t.total, 0);
-  const deliveryCostPaid      = delivered.reduce((s, t) => s + t.delivery, 0);
-  const netRevenue            = grossRevenue - deliveryCostPaid;
-  const returnShippingLoss    = returned.reduce((s, t) => s + t.delivery, 0);
+  const shippingRevenue       = delivered.reduce((s, t) => s + t.delivery, 0);
+  const netRevenue            = grossRevenue - shippingRevenue;
+  const returnedShippingQuote = returned.reduce((s, t) => s + t.delivery, 0);
   const returnedProductValue  = returned.reduce((s, t) => s + t.total, 0);
 
   const avgOrderValue   = delivered.length > 0 ? grossRevenue / delivered.length : 0;
-  const avgDeliveryCost = delivered.length > 0 ? deliveryCostPaid / delivered.length : 0;
+  const avgDeliveryCost = delivered.length > 0 ? shippingRevenue / delivered.length : 0;
 
   const msPerDay = 86400000;
   const daysInPeriod = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / msPerDay));
@@ -200,13 +204,14 @@ export function analyzeProductPeriod(
 
   return {
     totalOrders: periodOrders.length,
+    units, deliveredUnits, returnedUnits, quantityDataComplete,
     delivered: delivered.length,
     returned: returned.length,
     inProgress: inProg.length,
     others: others.length,
     settledCount, cancellationRate, deliveryRate,
-    grossRevenue, deliveryCostPaid, netRevenue,
-    returnShippingLoss, returnedProductValue,
+    grossRevenue, shippingRevenue, netRevenue,
+    returnedShippingQuote, returnedProductValue,
     avgOrderValue, avgDeliveryCost,
     daysInPeriod, avgDailyOrders: periodOrders.length / daysInPeriod,
     dailyTrend, topWilayas,
@@ -219,20 +224,22 @@ export function buildFinancialAnalysis(
 ): ProductFinancialAnalysis {
   const totalAdAndOther = expenses.adSpend + expenses.otherExpenses;
 
-  const variableCostPerOrder = expenses.unitCost + expenses.shippingFeePerOrder + expenses.packagingCostPerOrder;
-  const totalCOGS = period.delivered * expenses.unitCost;
+  const deliveredCostUnits = period.quantityDataComplete ? period.deliveredUnits : period.delivered;
+  const deliveredOrdersPerUnit = deliveredCostUnits > 0 ? period.delivered / deliveredCostUnits : 0;
+  const variableCostPerUnit = expenses.unitCost
+    + (expenses.shippingFeePerOrder + expenses.packagingCostPerOrder) * deliveredOrdersPerUnit;
+  const totalCOGS = deliveredCostUnits * expenses.unitCost;
   const totalShippingPaid = period.delivered * expenses.shippingFeePerOrder;
   const totalPackaging = period.totalOrders * expenses.packagingCostPerOrder;
-  const returnTotalCost = period.returned * (expenses.returnFeePerOrder + expenses.unitCost);
+  const returnTotalCost = period.returned * expenses.returnFeePerOrder;
 
-  const totalCost = period.deliveryCostPaid + period.returnShippingLoss
-    + totalCOGS + totalShippingPaid + totalPackaging + returnTotalCost
+  const totalCost = totalCOGS + totalShippingPaid + totalPackaging + returnTotalCost
     + totalAdAndOther;
 
   const trueNetProfit = period.grossRevenue - totalCost;
   const trueNetMargin = period.grossRevenue > 0 ? (trueNetProfit / period.grossRevenue) * 100 : 0;
-  const profitPerUnit = period.avgOrderValue > 0
-    ? period.avgOrderValue - variableCostPerOrder - period.avgDeliveryCost : 0;
+  const revenuePerUnit = deliveredCostUnits > 0 ? period.grossRevenue / deliveredCostUnits : 0;
+  const profitPerUnit = revenuePerUnit > 0 ? revenuePerUnit - variableCostPerUnit : 0;
   const breakEvenUnits = profitPerUnit > 0
     ? Math.ceil(totalAdAndOther / profitPerUnit) : 0;
 
@@ -242,10 +249,10 @@ export function buildFinancialAnalysis(
   const totalInvestment = totalCOGS + expenses.adSpend + expenses.otherExpenses;
   const roi = totalInvestment > 0 ? (trueNetProfit / totalInvestment) * 100 : 0;
 
-  const grossProfit = period.grossRevenue - period.deliveryCostPaid - period.returnShippingLoss;
+  const grossProfit = period.grossRevenue - totalCOGS;
   const netProfit = period.grossRevenue - totalCost;
   const netMargin = period.grossRevenue > 0 ? (netProfit / period.grossRevenue) * 100 : 0;
-  const avgNetPerDelivered = period.avgOrderValue - period.avgDeliveryCost;
+  const avgNetPerDelivered = period.avgOrderValue;
   const breakEvenOrders = avgNetPerDelivered > 0 ? Math.ceil(totalCost / avgNetPerDelivered) : 0;
 
   let decision: ProductFinancialAnalysis['decision'];
@@ -330,7 +337,7 @@ export function buildFinancialAnalysis(
     totalShippingPaid,
     totalPackaging,
     returnTotalCost,
-    variableCostPerOrder,
+    variableCostPerUnit,
     profitPerUnit,
     trueNetProfit,
     trueNetMargin,

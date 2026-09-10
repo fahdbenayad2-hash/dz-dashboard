@@ -1,217 +1,82 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Boxes, Search, ShieldCheck, Siren } from 'lucide-react';
-import type { TrackingOrder, PricingInputs, PricingResult } from '@/types';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import type { TrackingOrder } from '@/types';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
-import { RiskMeter } from '@/components/shared/RiskMeter';
-import { calculatePricing } from '@/lib/financialEngine';
-import { getRiskDetail } from '@/lib/riskScore';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { expandProductOrders } from '@/lib/orderItems';
 import { formatNumber } from '@/lib/utils';
 
-interface ProductAggregate {
-  name: string;
-  total: number;
-  delivered: number;
-  returned: number;
-  totalValue: number;
-}
-
-interface ProductRisk {
-  name: string;
-  sampleSize: number;
-  inputs: PricingInputs;
-  result: PricingResult;
-}
-
+type Level = 'low' | 'medium' | 'high' | 'insufficient';
+type ProductRisk = { name: string; orders: number; units: number; delivered: number; returned: number; settled: number; deliveryRate: number | null; score: number | null; level: Level };
 const PAGE_SIZE = 25;
 
-function aggregateProducts(tracking: TrackingOrder[]): ProductAggregate[] {
-  const products = new Map<string, ProductAggregate>();
-  for (const order of tracking) {
+function aggregate(tracking: TrackingOrder[]): ProductRisk[] {
+  const rows = new Map<string, Omit<ProductRisk, 'deliveryRate' | 'score' | 'level'>>();
+  for (const order of expandProductOrders(tracking)) {
     if (!order.product) continue;
-    const current = products.get(order.product) ?? { name: order.product, total: 0, delivered: 0, returned: 0, totalValue: 0 };
-    current.total += 1;
-    current.totalValue += order.total;
-    if (order.statusCategory === 'delivered') current.delivered += 1;
-    if (order.statusCategory === 'returned') current.returned += 1;
-    products.set(order.product, current);
+    const row = rows.get(order.product) ?? { name: order.product, orders: 0, units: 0, delivered: 0, returned: 0, settled: 0 };
+    row.orders += 1;
+    row.units += order.quantity ?? 0;
+    if (order.statusCategory === 'delivered') { row.delivered += 1; row.settled += 1; }
+    if (order.statusCategory === 'returned') { row.returned += 1; row.settled += 1; }
+    rows.set(order.product, row);
   }
-  return [...products.values()];
+  return [...rows.values()].map(row => {
+    const deliveryRate = row.settled ? row.delivered / row.settled * 100 : null;
+    // Small samples stay close to neutral instead of looking falsely safe or dangerous.
+    const confidence = Math.min(1, row.settled / 30);
+    const score = deliveryRate === null ? null : Math.round(50 + (deliveryRate - 50) * confidence);
+    const level: Level = row.settled < 10 ? 'insufficient' : score! >= 70 ? 'low' : score! >= 50 ? 'medium' : 'high';
+    return { ...row, deliveryRate, score, level };
+  }).sort((a, b) => (a.score ?? 50) - (b.score ?? 50) || b.orders - a.orders);
 }
 
-function makePricingInputs(product: ProductAggregate): PricingInputs {
-  const settled = product.delivered + product.returned;
-  const cancelRate = settled > 0 ? (product.returned / settled) * 100 : 37;
-  const avgTotal = product.total > 0 ? product.totalValue / product.total : 2000;
-  return {
-    fabricPricePerMeter: 450, fabricMeters: 2.5, sewingCost: 400, accessoriesCost: 50,
-    storageCost: 58, packagingCost: 50, shippingFee: 300, returnCost: 300,
-    codType: 'percentage', codValue: 3.5, adCostPerOrder: Math.max(200, avgTotal * 0.25),
-    cancellationRate: Math.min(cancelRate, 80), desiredProfit: 500,
-  };
-}
+const levelLabel: Record<Level, string> = { low: 'منخفض', medium: 'متوسط', high: 'مرتفع', insufficient: 'عينة ناقصة' };
+const levelVariant = (level: Level) => level === 'low' ? 'success' as const : level === 'high' ? 'danger' as const : level === 'medium' ? 'warning' as const : 'default' as const;
 
 export function RiskCenter({ trackingOrders }: { trackingOrders: TrackingOrder[] }) {
-  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [riskFilter, setRiskFilter] = useState('all');
+  const [filter, setFilter] = useState('all');
   const [page, setPage] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
+  const products = useMemo(() => aggregate(trackingOrders), [trackingOrders]);
+  const summary = useMemo(() => ({
+    high: products.filter(product => product.level === 'high').length,
+    medium: products.filter(product => product.level === 'medium').length,
+    low: products.filter(product => product.level === 'low').length,
+    insufficient: products.filter(product => product.level === 'insufficient').length,
+  }), [products]);
+  const filtered = useMemo(() => products.filter(product => (!search.trim() || product.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())) && (filter === 'all' || product.level === filter)), [products, search, filter]);
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const current = Math.min(page, pages - 1);
+  const visible = filtered.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE);
+  const detail = products.find(product => product.name === selected) ?? null;
 
-  const productRiskData = useMemo<ProductRisk[]>(() => aggregateProducts(trackingOrders)
-    .map(product => {
-      const inputs = makePricingInputs(product);
-      return { name: product.name, sampleSize: product.total, inputs, result: calculatePricing(inputs) };
-    })
-    .sort((a, b) => a.result.riskScore - b.result.riskScore), [trackingOrders]);
-
-  const portfolio = useMemo(() => {
-    if (productRiskData.length === 0) return null;
-    const distribution = { low: 0, medium: 0, high: 0 };
-    let scoreTotal = 0;
-    const urgentFixes: { product: string; action: string; score: number }[] = [];
-    for (const product of productRiskData) {
-      scoreTotal += product.result.riskScore;
-      if (product.result.riskScore >= 80) distribution.low += 1;
-      else if (product.result.riskScore >= 50) distribution.medium += 1;
-      else distribution.high += 1;
-      if (product.result.riskScore < 50) urgentFixes.push({
-        product: product.name,
-        action: product.inputs.cancellationRate > 40 ? 'خفض معدل الإرجاع' : 'تحسين هامش الربح',
-        score: product.result.riskScore,
-      });
-    }
-    return { score: Math.round(scoreTotal / productRiskData.length), distribution, urgentFixes: urgentFixes.slice(0, 3) };
-  }, [productRiskData]);
-
-  const filteredProducts = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase();
-    return productRiskData.filter(product => {
-      const matchesSearch = !query || product.name.toLocaleLowerCase().includes(query);
-      const level = product.result.riskScore >= 80 ? 'low' : product.result.riskScore >= 50 ? 'medium' : 'high';
-      return matchesSearch && (riskFilter === 'all' || level === riskFilter);
-    });
-  }, [productRiskData, riskFilter, search]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages - 1);
-  const visibleProducts = filteredProducts.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
-  const selectedRisk = useMemo(() => {
-    if (!selectedProduct) return null;
-    const product = productRiskData.find(item => item.name === selectedProduct);
-    return product ? { product, detail: getRiskDetail(product.inputs, product.result) } : null;
-  }, [selectedProduct, productRiskData]);
-
-  const selectProduct = (name: string) => {
-    setSelectedProduct(name);
-    requestAnimationFrame(() => document.getElementById('risk-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-  };
-
-  return (
-    <div className="space-y-5">
-      {portfolio && <>
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-          <SummaryCard icon={<ShieldCheck className="h-5 w-5" />} label="صحة المحفظة" value={`${portfolio.score}/100`} tone={portfolio.score >= 80 ? 'success' : portfolio.score >= 50 ? 'warning' : 'danger'} />
-          <SummaryCard icon={<Siren className="h-5 w-5" />} label="مخاطر مرتفعة" value={formatNumber(portfolio.distribution.high)} tone="danger" />
-          <SummaryCard icon={<AlertTriangle className="h-5 w-5" />} label="مخاطر متوسطة" value={formatNumber(portfolio.distribution.medium)} tone="warning" />
-          <SummaryCard icon={<Boxes className="h-5 w-5" />} label="المنتجات المحللة" value={formatNumber(productRiskData.length)} tone="primary" />
-        </div>
-
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_19rem]">
-          <Card>
-            <CardHeader className="border-b border-[var(--color-border)]">
-              <div className="flex items-center justify-between gap-3">
-                <div><CardTitle>إجراءات مطلوبة</CardTitle><p className="mt-1 text-xs text-[var(--color-text-muted)]">المنتجات ذات الأثر الأعلى التي تحتاج مراجعة</p></div>
-                <Badge variant={portfolio.urgentFixes.length ? 'danger' : 'success'}>{portfolio.urgentFixes.length}</Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="divide-y divide-[var(--color-border)] p-0">
-              {portfolio.urgentFixes.map((fix, index) => <button key={`${fix.product}-${index}`} onClick={() => selectProduct(fix.product)} className="flex min-h-16 w-full items-center justify-between gap-4 px-5 py-3 text-right transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)] dark:hover:bg-gray-800/50">
-                <span className="min-w-0"><span className="block truncate text-sm font-semibold">{fix.product}</span><span className="mt-1 block text-xs text-[var(--color-text-muted)]">{fix.action}</span></span>
-                <span className="shrink-0 text-sm font-bold text-[var(--color-danger)] tabular-nums">{fix.score}/100</span>
-              </button>)}
-              {portfolio.urgentFixes.length === 0 && <p className="p-6 text-center text-sm text-[var(--color-text-muted)]">لا توجد إجراءات عاجلة حالياً</p>}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>توزيع المخاطر</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <RiskMeter score={portfolio.score} level={portfolio.score >= 80 ? 'منخفض' : portfolio.score >= 50 ? 'متوسط' : 'مرتفع'} color={portfolio.score >= 80 ? '#1D9E75' : portfolio.score >= 50 ? '#EF9F27' : '#E24B4A'} size="md" />
-              <DistributionRow label="منخفض" value={portfolio.distribution.low} total={productRiskData.length} color="bg-[var(--color-success)]" />
-              <DistributionRow label="متوسط" value={portfolio.distribution.medium} total={productRiskData.length} color="bg-[var(--color-warning)]" />
-              <DistributionRow label="مرتفع" value={portfolio.distribution.high} total={productRiskData.length} color="bg-[var(--color-danger)]" />
-            </CardContent>
-          </Card>
-        </div>
-      </>}
-
-      <Card>
-        <CardHeader className="border-b border-[var(--color-border)]">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div><CardTitle>مصفوفة مخاطر المنتجات</CardTitle><p className="mt-1 text-xs text-[var(--color-text-muted)]">{formatNumber(filteredProducts.length)} منتج مطابق</p></div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <div className="relative"><Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" /><Input value={search} onChange={event => { setSearch(event.target.value); setPage(0); }} placeholder="بحث عن منتج" className="min-h-11 pr-9 sm:w-64" /></div>
-              <Select value={riskFilter} onChange={event => { setRiskFilter(event.target.value); setPage(0); }} className="min-h-11 sm:w-44" aria-label="تصفية مستوى المخاطر">
-                <option value="all">كل المستويات</option><option value="high">مرتفع</option><option value="medium">متوسط</option><option value="low">منخفض</option>
-              </Select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto"><Table><TableHeader><TableRow>
-            <TableHead>المنتج</TableHead><TableHead>الدرجة</TableHead><TableHead>المستوى</TableHead><TableHead>حجم العينة</TableHead><TableHead>معدل الإرجاع</TableHead><TableHead>هامش الربح</TableHead><TableHead>نسبة CPA</TableHead><TableHead>الإجراء</TableHead>
-          </TableRow></TableHeader><TableBody>
-            {visibleProducts.map(product => <TableRow key={product.name} className={selectedProduct === product.name ? 'bg-[var(--color-primary)]/5' : ''} onClick={() => selectProduct(product.name)}>
-              <TableCell className="max-w-64 truncate font-medium" title={product.name}>{product.name}</TableCell>
-              <TableCell><RiskScore score={product.result.riskScore} /></TableCell>
-              <TableCell><RiskBadge score={product.result.riskScore} label={product.result.riskLevel} /></TableCell>
-              <TableCell className="tabular-nums">{formatNumber(product.sampleSize)}</TableCell>
-              <TableCell className="tabular-nums">{product.inputs.cancellationRate.toFixed(1)}%</TableCell>
-              <TableCell className={product.result.netMargin < 20 ? 'text-[var(--color-danger)] tabular-nums' : 'text-[var(--color-success)] tabular-nums'}>{product.result.netMargin.toFixed(1)}%</TableCell>
-              <TableCell className="tabular-nums">{(product.inputs.adCostPerOrder / product.result.recommendedPrice * 100).toFixed(1)}%</TableCell>
-              <TableCell><Button variant="outline" size="sm" onClick={event => { event.stopPropagation(); selectProduct(product.name); }}>تحليل</Button></TableCell>
-            </TableRow>)}
-            {visibleProducts.length === 0 && <TableRow><TableCell colSpan={8} className="py-10 text-center text-[var(--color-text-muted)]">لا توجد منتجات مطابقة</TableCell></TableRow>}
-          </TableBody></Table></div>
-          {totalPages > 1 && <div className="flex flex-col gap-3 border-t border-[var(--color-border)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-sm text-[var(--color-text-muted)]">الصفحة {currentPage + 1} من {totalPages}</span>
-            <div className="flex gap-2"><Button variant="outline" size="sm" disabled={currentPage === 0} onClick={() => setPage(value => Math.max(0, value - 1))}>السابق</Button><Button variant="outline" size="sm" disabled={currentPage >= totalPages - 1} onClick={() => setPage(value => Math.min(totalPages - 1, value + 1))}>التالي</Button></div>
-          </div>}
-        </CardContent>
-      </Card>
-
-      {selectedRisk && <Card id="risk-detail" className="scroll-mt-24">
-        <CardHeader className="border-b border-[var(--color-border)]"><CardTitle>تحليل: {selectedRisk.product.name}</CardTitle><p className="text-xs text-[var(--color-text-muted)]">النتيجة تقديرية ومبنية على {formatNumber(selectedRisk.product.sampleSize)} طلب</p></CardHeader>
-        <CardContent className="grid gap-6 py-5 lg:grid-cols-[16rem_minmax(0,1fr)]">
-          <div className="flex flex-col items-center justify-center rounded-xl bg-gray-50 p-5 dark:bg-gray-800/50"><RiskMeter score={selectedRisk.detail.score} level={selectedRisk.detail.level} color={selectedRisk.detail.color} size="lg" /></div>
-          <div className="grid gap-3 sm:grid-cols-2">{selectedRisk.detail.factors.map(factor => <div key={factor.label} className="rounded-xl border border-[var(--color-border)] p-4">
-            <div className="flex items-start justify-between gap-3"><p className="text-sm font-semibold">{factor.label}</p><Badge variant={factor.penalty > 15 ? 'danger' : factor.penalty > 0 ? 'warning' : 'success'}>-{factor.penalty}</Badge></div>
-            <p className="mt-3 text-xs text-[var(--color-text-muted)]">الحالي: <strong className="text-[var(--color-text)]">{factor.currentValue}</strong> · المرجع: {factor.benchmark}</p><p className="mt-2 text-xs leading-5 text-[var(--color-warning)]">{factor.recommendation}</p>
-          </div>)}</div>
-        </CardContent>
-      </Card>}
+  return <div className="space-y-5">
+    <p className="text-sm leading-6 text-[var(--color-text-muted)]">المخاطر هنا تشغيلية ومبنية فقط على الطلبات المحسومة في Octomatic. أزلنا تقديرات القماش والإعلانات والهامش الثابتة لأنها لم تكن بيانات فعلية. أقل من 10 طلبات محسومة يظهر كعينة ناقصة.</p>
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <Summary icon={<Siren className="h-5 w-5" />} label="مخاطر مرتفعة" value={summary.high} tone="danger" />
+      <Summary icon={<AlertTriangle className="h-5 w-5" />} label="مخاطر متوسطة" value={summary.medium} tone="warning" />
+      <Summary icon={<ShieldCheck className="h-5 w-5" />} label="مخاطر منخفضة" value={summary.low} tone="success" />
+      <Summary icon={<Boxes className="h-5 w-5" />} label="عينة ناقصة" value={summary.insufficient} tone="primary" />
     </div>
-  );
+    <Card>
+      <CardHeader className="border-b border-[var(--color-border)]"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><CardTitle>مخاطر المنتجات</CardTitle><p className="mt-1 text-xs text-[var(--color-text-muted)]">الدرجة تعدّل معدل التوصيل حسب حجم العينة حتى 30 طلباً محسومًا</p></div><div className="flex flex-col gap-2 sm:flex-row"><div className="relative"><Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" /><Input value={search} onChange={event => { setSearch(event.target.value); setPage(0); }} placeholder="بحث عن منتج" className="pr-9 sm:w-64" /></div><Select value={filter} onChange={event => { setFilter(event.target.value); setPage(0); }}><option value="all">كل المستويات</option><option value="high">مرتفع</option><option value="medium">متوسط</option><option value="low">منخفض</option><option value="insufficient">عينة ناقصة</option></Select></div></div></CardHeader>
+      <CardContent className="p-0"><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>المنتج</TableHead><TableHead>الطلبات</TableHead><TableHead>القطع المعروفة</TableHead><TableHead>المحسوم</TableHead><TableHead>مسلّم</TableHead><TableHead>مرتجع</TableHead><TableHead>التوصيل من المحسوم</TableHead><TableHead>المستوى</TableHead><TableHead>التفاصيل</TableHead></TableRow></TableHeader><TableBody>
+        {visible.map(product => <TableRow key={product.name} onClick={() => setSelected(product.name)} className="cursor-pointer"><TableCell className="max-w-72 truncate font-medium" title={product.name}>{product.name}</TableCell><TableCell>{formatNumber(product.orders)}</TableCell><TableCell>{formatNumber(product.units)}</TableCell><TableCell>{formatNumber(product.settled)}</TableCell><TableCell className="text-[var(--color-success)]">{formatNumber(product.delivered)}</TableCell><TableCell className="text-[var(--color-danger)]">{formatNumber(product.returned)}</TableCell><TableCell>{product.deliveryRate === null ? 'غير متاح' : `${product.deliveryRate.toFixed(1)}%`}</TableCell><TableCell><Badge variant={levelVariant(product.level)}>{levelLabel[product.level]}</Badge></TableCell><TableCell><Button size="sm" variant="outline" onClick={event => { event.stopPropagation(); setSelected(product.name); }}>عرض</Button></TableCell></TableRow>)}
+        {!visible.length && <TableRow><TableCell colSpan={9} className="py-10 text-center text-[var(--color-text-muted)]">لا توجد نتائج</TableCell></TableRow>}
+      </TableBody></Table></div>{pages > 1 && <div className="flex items-center justify-between border-t border-[var(--color-border)] px-5 py-4"><span className="text-sm text-[var(--color-text-muted)]">{current + 1} / {pages}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={!current} onClick={() => setPage(value => value - 1)}>السابق</Button><Button size="sm" variant="outline" disabled={current + 1 >= pages} onClick={() => setPage(value => value + 1)}>التالي</Button></div></div>}</CardContent>
+    </Card>
+    {detail && <Card><CardHeader><CardTitle>{detail.name}</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-3"><Fact label="حجم القرار" value={`${formatNumber(detail.settled)} طلب محسوم`} /><Fact label="المعدل الخام" value={detail.deliveryRate === null ? 'غير متاح' : `${detail.deliveryRate.toFixed(1)}% توصيل`} /><Fact label="الدرجة بعد ضبط العينة" value={detail.score === null ? 'غير متاح' : `${detail.score}/100`} /><p className="sm:col-span-3 text-sm text-[var(--color-text-muted)]">{detail.level === 'insufficient' ? 'اجمع 10 طلبات محسومة على الأقل قبل اتخاذ قرار.' : detail.level === 'high' ? 'راجع جودة المنتج، وصف العرض، الولايات وشركة التوصيل قبل زيادة الميزانية.' : detail.level === 'medium' ? 'حسّن الولايات أو الحملات الأضعف وراقب 20 طلباً محسومًا إضافياً.' : 'الأداء التشغيلي مستقر؛ راقب الهامش من صفحة التحليل المالي قبل التوسعة.'}</p></CardContent></Card>}
+  </div>;
 }
 
-function SummaryCard({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: string; tone: 'primary' | 'success' | 'warning' | 'danger' }) {
+function Summary({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: number; tone: 'primary' | 'success' | 'warning' | 'danger' }) {
   const colors = { primary: 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]', success: 'bg-[var(--color-success)]/10 text-[var(--color-success)]', warning: 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]', danger: 'bg-[var(--color-danger)]/10 text-[var(--color-danger)]' };
-  return <Card><CardContent className="flex items-center gap-3 p-4 sm:p-5"><span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${colors[tone]}`}>{icon}</span><span className="min-w-0"><span className="block truncate text-xs text-[var(--color-text-muted)]">{label}</span><span className="mt-1 block text-xl font-bold tabular-nums sm:text-2xl">{value}</span></span></CardContent></Card>;
+  return <Card><CardContent className="flex items-center gap-3 p-4"><span className={`flex h-11 w-11 items-center justify-center rounded-xl ${colors[tone]}`}>{icon}</span><span><span className="block text-xs text-[var(--color-text-muted)]">{label}</span><strong className="text-2xl tabular-nums">{formatNumber(value)}</strong></span></CardContent></Card>;
 }
-
-function DistributionRow({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
-  const percentage = total > 0 ? (value / total) * 100 : 0;
-  return <div><div className="mb-1.5 flex items-center justify-between text-xs"><span>{label}</span><span className="font-semibold tabular-nums">{formatNumber(value)} · {percentage.toFixed(0)}%</span></div><div className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"><div className={`h-full rounded-full ${color}`} style={{ width: `${percentage}%` }} /></div></div>;
-}
-
-function RiskScore({ score }: { score: number }) {
-  return <span className={score >= 80 ? 'font-bold text-[var(--color-success)] tabular-nums' : score >= 50 ? 'font-bold text-[var(--color-warning)] tabular-nums' : 'font-bold text-[var(--color-danger)] tabular-nums'}>{score}/100</span>;
-}
-
-function RiskBadge({ score, label }: { score: number; label: string }) {
-  return <Badge variant={score >= 80 ? 'success' : score >= 50 ? 'warning' : 'danger'}>{label}</Badge>;
-}
+function Fact({ label, value }: { label: string; value: string }) { return <div className="rounded-xl border border-[var(--color-border)] p-4"><p className="text-xs text-[var(--color-text-muted)]">{label}</p><p className="mt-2 font-bold">{value}</p></div>; }

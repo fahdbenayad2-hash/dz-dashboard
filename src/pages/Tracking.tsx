@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { OrderItems } from '@/components/shared/OrderItems';
 import type { TrackingOrder } from '@/types';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -146,7 +147,7 @@ export function Tracking({ trackingOrders }: { trackingOrders: TrackingOrder[] }
                           </span>
                         </span>
                       </TableCell>
-                      <TableCell className="max-w-40 truncate">{t.product}</TableCell>
+                      <TableCell><OrderItems {...t} /></TableCell>
                       <TableCell className="tabular-nums">{formatCurrency(t.total)}</TableCell>
                       <TableCell className="tabular-nums">{formatCurrency(t.delivery)}</TableCell>
                       <TableCell>{t.driver || '-'}</TableCell>

@@ -1,16 +1,12 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   Bell,
-  CalendarDays,
-  CalendarRange,
+  ChartNoAxesCombined,
   ClipboardList,
-  FlaskConical,
   LayoutDashboard,
   Package,
   PackageSearch,
-  Shield,
   ShieldAlert,
-  TrendingUp,
   Users,
 } from 'lucide-react';
 
@@ -44,18 +40,14 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: 'التحليلات',
     items: [
-      { to: '/products', icon: PackageSearch, label: 'المنتجات والتسعير', description: 'أداء المنتجات وحساب السعر' },
-      { to: '/product-analysis', icon: FlaskConical, label: 'تحليل المنتج', description: 'تحليل مفصل للمنتجات' },
-      { to: '/daily-trends', icon: TrendingUp, label: 'الاتجاهات اليومية', description: 'تغير الأداء عبر الأيام' },
-      { to: '/monthly-report', icon: CalendarDays, label: 'تقرير الشهر', description: 'ملخص ومقارنة شهرية' },
-      { to: '/yearly-report', icon: CalendarRange, label: 'تقرير العام', description: 'الاتجاه السنوي والأرباع' },
+      { to: '/products', icon: PackageSearch, label: 'المنتجات', description: 'الأداء والتسعير والتحليل المالي' },
+      { to: '/reports', icon: ChartNoAxesCombined, label: 'التقارير', description: 'تحليل يومي وشهري وسنوي' },
     ],
   },
   {
     label: 'المخاطر',
     items: [
       { to: '/risk', icon: ShieldAlert, label: 'مركز المخاطر', description: 'المشاكل التي تحتاج تدخلاً' },
-      { to: '/risk-dashboard', icon: Shield, label: 'التحليل المتقدم', description: 'تفاصيل عوامل المخاطر' },
     ],
   },
   {

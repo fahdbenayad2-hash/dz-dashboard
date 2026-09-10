@@ -1,5 +1,6 @@
 import { toCSV } from '@/lib/csv';
 import { useState } from 'react';
+import { OrderItems } from '@/components/shared/OrderItems';
 import type { Order, OrderStatus } from '@/types';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -141,7 +142,7 @@ export function Orders({ orders }: { orders: Order[] }) {
                     <TableCell dir="ltr" className="text-xs">{o.phone}</TableCell>
                     <TableCell>{o.wilaya}</TableCell>
                     <TableCell><StatusBadge status={o.status} /></TableCell>
-                    <TableCell className="max-w-40 truncate">{o.product}</TableCell>
+                    <TableCell><OrderItems {...o} /></TableCell>
                     <TableCell className="tabular-nums">{formatCurrency(o.total)}</TableCell>
                     <TableCell className="tabular-nums">{formatCurrency(o.delivery)}</TableCell>
                     <TableCell>{o.agent}</TableCell>

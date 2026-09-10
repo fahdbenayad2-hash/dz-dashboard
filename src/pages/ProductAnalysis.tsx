@@ -9,6 +9,7 @@ import { LineChart } from '@/components/charts/LineChart';
 import { BarChart } from '@/components/charts/BarChart';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import { analyzeProductPeriod, buildFinancialAnalysis, buildWilayaAnalysis, buildCompetitiveAnalysis } from '@/lib/financialEngine';
+import { expandProductOrders } from '@/lib/orderItems';
 import { businessDate } from '@/lib/businessDate';
 import { TrendingUp, TrendingDown, Minus, DollarSign, BarChart3, Target, Shield, ChevronUp, ChevronDown } from 'lucide-react';
 
@@ -140,6 +141,9 @@ function ProductAnalysisView({
           color="var(--color-warning)"
         />
       </div>
+      <p className="text-xs leading-5 text-[var(--color-text-muted)]">
+        الوحدات: {period.quantityDataComplete ? `${formatNumber(period.units)} إجمالاً و${formatNumber(period.deliveredUnits)} مسلّمة` : 'تفاصيل الكمية ناقصة لبعض الطلبات؛ تكلفة الوحدة تُحسب مؤقتاً على أساس طلب واحد لتلك السجلات'}.
+      </p>
 
       {/* KPI Cards — صف 2: الماليات الموسعة */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
@@ -154,7 +158,7 @@ function ProductAnalysisView({
           icon={<BarChart3 className="h-5 w-5" />}
           label="ربح القطعة"
           value={formatCurrency(analysis.profitPerUnit)}
-          changeLabel={`بعد خصم ${formatCurrency(analysis.variableCostPerOrder)} متغيرات/قطعة`}
+          changeLabel={`بعد خصم ${formatCurrency(analysis.variableCostPerUnit)} تكلفة متغيرة/قطعة`}
           color={analysis.profitPerUnit > 0 ? 'var(--color-success)' : 'var(--color-danger)'}
         />
         <KPICard
@@ -179,19 +183,17 @@ function ProductAnalysisView({
           <CardHeader><CardTitle>قائمة الدخل الكاملة (P&L)</CardTitle></CardHeader>
           <CardContent>
             <p className="mb-3 text-xs leading-5 text-[var(--color-text-muted)]">
-              تقدير تشغيلي: يفترض أن كل مرتجع يسبب خسارة تكلفة وحدة كاملة. عدّل التكاليف اليدوية حسب فاتورة الناقل وحالة رجوع المخزون قبل اتخاذ قرار مالي.
+              مبلغ Octomatic الإجمالي يشمل الشحن المحصّل من العميل. تكلفة الناقل والمرتجع لا توجد في المصدر، لذلك لا تُخصم إلا من المدخلات اليدوية أدناه.
             </p>
             <div className="space-y-2 text-sm">
               {[
                 { label: 'الإيراد الإجمالي (مسلّم)', value: period.grossRevenue, type: 'income' as const },
-                { label: 'رسوم الشحن المسجلة داخل قيمة الطلب', value: -period.deliveryCostPaid, type: 'cost' as const },
-                { label: '= إيراد البضاعة بعد فصل الشحن', value: period.netRevenue, type: 'income' as const },
+                { label: 'منه رسوم شحن محصّلة (مدرجة أعلاه)', value: period.shippingRevenue, type: 'income' as const },
                 { label: '', value: 0, type: 'separator' as const },
                 { label: 'تكلفة البضاعة المباعة (COGS)', value: -analysis.totalCOGS, type: 'cost' as const },
                 { label: 'تكلفة الناقل للطلبات المسلّمة (إدخال يدوي)', value: -analysis.totalShippingPaid, type: 'cost' as const },
                 { label: 'رسوم التغليف', value: -analysis.totalPackaging, type: 'cost' as const },
-                { label: 'تكلفة المرتجعات المفترضة (وحدة + رسوم يدوية)', value: -analysis.returnTotalCost, type: 'cost' as const },
-                { label: 'رسوم الشحن المسجلة للمرتجعات', value: -period.returnShippingLoss, type: 'cost' as const },
+                { label: 'تكلفة المرتجعات (إدخال يدوي)', value: -analysis.returnTotalCost, type: 'cost' as const },
                 { label: 'الإنفاق الإعلاني', value: -analysis.expenses.adSpend, type: 'cost' as const },
                 { label: 'مصاريف أخرى', value: -analysis.expenses.otherExpenses, type: 'cost' as const },
                 { label: '', value: 0, type: 'separator' as const },
@@ -497,11 +499,12 @@ function ProductAnalysisView({
 }
 
 export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOrder[] }) {
+  const expandedTracking = useMemo(() => expandProductOrders(trackingOrders), [trackingOrders]);
   const productList = useMemo(() => {
     const map = new Map<string, number>();
-    trackingOrders.forEach(t => { if (t.product) map.set(t.product, (map.get(t.product) || 0) + 1); });
+    expandedTracking.forEach(t => { if (t.product) map.set(t.product, (map.get(t.product) || 0) + 1); });
     return [...map.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
-  }, [trackingOrders]);
+  }, [expandedTracking]);
 
   const defaults = defaultDates();
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
@@ -520,17 +523,24 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
   const combinedAnalysis = useMemo(() => {
     if (selectedProducts.length === 0 || !submitted) return null;
     const label = selectedProducts.join(' + ');
-    const unifiedTracking = trackingOrders.map(t => ({
-      ...t,
-      product: selectedProducts.includes(t.product) ? label : t.product,
-    }));
+    const byOrder = new Map<string, TrackingOrder>();
+    for (const row of expandedTracking) {
+      if (!selectedProducts.includes(row.product)) continue;
+      const current = byOrder.get(row.orderId);
+      if (!current) { byOrder.set(row.orderId, { ...row, product: label }); continue; }
+      current.total += row.total;
+      current.delivery += row.delivery;
+      current.quantity = current.quantity === undefined || row.quantity === undefined ? undefined : current.quantity + row.quantity;
+      current.itemDataMissing ||= row.itemDataMissing;
+    }
+    const unifiedTracking = [...byOrder.values()];
     const filter: ProductPeriodFilter = { productName: label, dateFrom, dateTo };
     const period = analyzeProductPeriod(unifiedTracking, filter);
     const analysis = buildFinancialAnalysis(period, expenses);
     const wilaya = buildWilayaAnalysis(unifiedTracking, filter, expenses);
     const competitive = showCompetitor ? buildCompetitiveAnalysis(analysis, competitorData) : null;
     return { productName: label, period, analysis, wilaya, competitive };
-  }, [selectedProducts, dateFrom, dateTo, expenses, showCompetitor, competitorData, submitted, trackingOrders]);
+  }, [selectedProducts, dateFrom, dateTo, expenses, showCompetitor, competitorData, submitted, expandedTracking]);
 
   const handleToggleProduct = (product: string) => {
     setSelectedProducts(prev =>
@@ -542,7 +552,6 @@ export function ProductAnalysis({ trackingOrders }: { trackingOrders: TrackingOr
   const handleSubmit = () => {
     if (selectedProducts.length === 0 || !dateFrom || !dateTo) return;
     setSubmitted(true);
-    console.log('[DZ-CHANGE] product-analysis-submit', { selectedProducts, dateFrom, dateTo, expenses });
   };
 
   const handleExpenseChange = (key: keyof ProductExpenses, value: string | number) => {

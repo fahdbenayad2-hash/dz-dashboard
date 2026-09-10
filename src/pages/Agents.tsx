@@ -8,7 +8,7 @@ import { BarChart } from '@/components/charts/BarChart';
 import { LineChart } from '@/components/charts/LineChart';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/utils';
 import { Star, ThumbsUp, AlertTriangle, Flame } from 'lucide-react';
-import { getAgentDataTracking, getAgentDailyStats, getAgentLast7Days, getAgentDailyVsMonthlyAvg } from '@/lib/dashboardMetrics';
+import { getAgentDataTracking, getAgentDailyStats, getAgentLast7Days } from '@/lib/dashboardMetrics';
 import { businessDate } from '@/lib/businessDate';
 
 function useAgentData(trackingOrders: TrackingOrder[]) {
@@ -32,9 +32,31 @@ const badgeConfig: Record<AgentBadge, { icon: typeof Star; label: string; color:
   poor: { icon: Flame, label: 'ضعيف', color: '#E24B4A' },
 };
 
-export function Agents({ orders, trackingOrders }: { orders: Order[]; trackingOrders: TrackingOrder[] }) {
-  const agents = useAgentData(trackingOrders.length > 0 ? trackingOrders : orders as unknown as TrackingOrder[]);
+export function Agents({ trackingOrders }: { orders: Order[]; trackingOrders: TrackingOrder[] }) {
+  const agents = useAgentData(trackingOrders);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  const todayKey = businessDate(new Date());
+  const todayStats = useMemo(() => getAgentDailyStats(trackingOrders, todayKey), [trackingOrders, todayKey]);
+  const last7Days = useMemo(() => getAgentLast7Days(trackingOrders), [trackingOrders]);
+  const monthlyComparison = useMemo(() => {
+    const monthKey = todayKey.slice(0, 7);
+    const counts = new Map<string, { month: number; today: number }>();
+    for (const order of trackingOrders) {
+      if (!order.agent || !order.date) continue;
+      const day = businessDate(order.date);
+      if (!day.startsWith(monthKey)) continue;
+      const row = counts.get(order.agent) ?? { month: 0, today: 0 };
+      row.month++;
+      if (day === todayKey) row.today++;
+      counts.set(order.agent, row);
+    }
+    const daysElapsed = Number(todayKey.slice(8, 10));
+    return new Map(agents.map(agent => {
+      const row = counts.get(agent.name) ?? { month: 0, today: 0 };
+      const dailyAvgOrders = row.month / Math.max(1, daysElapsed);
+      return [agent.name, { dailyAvgOrders, todayCount: row.today, performanceVsAvg: dailyAvgOrders > 0 ? (row.today - dailyAvgOrders) / dailyAvgOrders * 100 : 0, daysElapsed }] as const;
+    }));
+  }, [agents, trackingOrders, todayKey]);
 
   const agentTrackingOrders = useMemo(() => {
     if (!selectedAgent) return [];
@@ -57,9 +79,13 @@ export function Agents({ orders, trackingOrders }: { orders: Order[]; trackingOr
       d.setDate(d.getDate() - (29 - i));
       return businessDate(d);
     });
-    const dailyCounts = last30Days.map(day =>
-      agentTrackingOrders.filter(t => t.date && businessDate(t.date) === day).length
-    );
+    const dayCounts = new Map<string, number>();
+    for (const order of agentTrackingOrders) {
+      if (!order.date) continue;
+      const day = businessDate(order.date);
+      dayCounts.set(day, (dayCounts.get(day) || 0) + 1);
+    }
+    const dailyCounts = last30Days.map(day => dayCounts.get(day) || 0);
 
     const wilayaMap = new Map<string, number>();
     agentTrackingOrders.forEach(t => {
@@ -82,9 +108,9 @@ export function Agents({ orders, trackingOrders }: { orders: Order[]; trackingOr
                 <TableRow>
                   <TableHead>الوكيل</TableHead>
                   <TableHead>إجمالي الطلبات</TableHead>
-                  <TableHead>المؤكدة</TableHead>
-                  <TableHead>الفاشلة</TableHead>
-                  <TableHead>معدل الإلغاء</TableHead>
+                  <TableHead>المسلّمة</TableHead>
+                  <TableHead>المرتجعة</TableHead>
+                  <TableHead>الإرجاع من المحسوم</TableHead>
                   <TableHead>إيراد المسلّم</TableHead>
                   <TableHead>متوسط الطلب</TableHead>
                   <TableHead>الأداء</TableHead>
@@ -226,9 +252,6 @@ export function Agents({ orders, trackingOrders }: { orders: Order[]; trackingOr
 
       {/* ─── FEAT-5: المتابعة اليومية ─── */}
       {(() => {
-        const todayKey = businessDate(new Date());
-        const todayStats = getAgentDailyStats(trackingOrders, todayKey);
-        const last7Days = getAgentLast7Days(trackingOrders);
         return (
           <>
             <Card>
@@ -257,7 +280,7 @@ export function Agents({ orders, trackingOrders }: { orders: Order[]; trackingOr
                           </TableCell>
                         </TableRow>
                       ) : todayStats.map(a => {
-                        const vs = getAgentDailyVsMonthlyAvg(trackingOrders, a.name);
+                        const vs = monthlyComparison.get(a.name)!;
                         return (
                           <TableRow key={a.name}>
                             <TableCell className="font-medium">{a.name}</TableCell>

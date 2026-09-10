@@ -71,11 +71,18 @@ describe('data integrity regressions', () => {
     expect(result.find(item => item.wilaya === 'A')?.score).toBe(87.5);
     expect(result.find(item => item.wilaya === 'B')?.score).toBe(12.5);
   });
-  it('deducts return shipping consistently from both profit figures', () => {
+  it('does not treat customer shipping quote or returned stock as an actual expense', () => {
     const period = analyzeProductPeriod([order('delivered'), order('returned')], { productName: 'test', dateFrom: '2026-06-01', dateTo: '2026-06-30' });
     const result = buildFinancialAnalysis(period, { unitCost: 1000, unitPrice: 5000, shippingFeePerOrder: 0, returnFeePerOrder: 0, packagingCostPerOrder: 0, adSpend: 0, otherExpenses: 0, expenseNotes: '' });
-    expect(result.trueNetProfit).toBe(2000);
+    expect(result.trueNetProfit).toBe(4000);
     expect(result.trueNetProfit).toBe(result.netProfit);
+  });
+  it('uses delivered item quantity for COGS when Octomatic item data is available', () => {
+    const period = analyzeProductPeriod([order('delivered', undefined, { quantity: 2, total: 16000, delivery: 800 })], { productName: 'test', dateFrom: '2026-06-01', dateTo: '2026-06-30' });
+    const result = buildFinancialAnalysis(period, { unitCost: 3000, unitPrice: 7600, shippingFeePerOrder: 600, returnFeePerOrder: 300, packagingCostPerOrder: 100, adSpend: 0, otherExpenses: 0, expenseNotes: '' });
+    expect(period.deliveredUnits).toBe(2);
+    expect(result.totalCOGS).toBe(6000);
+    expect(result.trueNetProfit).toBe(9300);
   });
   it('rejects HTTP failures and malformed data instead of treating them as empty sheets', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));

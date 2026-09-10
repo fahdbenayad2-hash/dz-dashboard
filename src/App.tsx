@@ -15,31 +15,23 @@ import { classNames } from '@/lib/utils';
 import { Loader2 } from 'lucide-react';
 
 const Dashboard = lazy(() => import('@/pages/Dashboard').then(module => ({ default: module.Dashboard })));
-const Products = lazy(() => import('@/pages/Products').then(module => ({ default: module.Products })));
+const ProductWorkspace = lazy(() => import('@/pages/ProductWorkspace').then(module => ({ default: module.ProductWorkspace })));
 const Agents = lazy(() => import('@/pages/Agents').then(module => ({ default: module.Agents })));
 const Orders = lazy(() => import('@/pages/Orders').then(module => ({ default: module.Orders })));
 const Tracking = lazy(() => import('@/pages/Tracking').then(module => ({ default: module.Tracking })));
 const RiskCenter = lazy(() => import('@/pages/RiskCenter').then(module => ({ default: module.RiskCenter })));
-const MonthlyReport = lazy(() => import('@/pages/MonthlyReport').then(module => ({ default: module.MonthlyReport })));
-const YearlyReport = lazy(() => import('@/pages/YearlyReport').then(module => ({ default: module.YearlyReport })));
-const ProductAnalysis = lazy(() => import('@/pages/ProductAnalysis').then(module => ({ default: module.ProductAnalysis })));
-const DailyTrends = lazy(() => import('@/features/analytics/DailyTrends').then(module => ({ default: module.DailyTrends })));
-const RiskDashboard = lazy(() => import('@/features/analytics/RiskDashboard').then(module => ({ default: module.RiskDashboard })));
+const Reports = lazy(() => import('@/pages/Reports').then(module => ({ default: module.Reports })));
 const NotificationSettings = lazy(() => import('@/features/analytics/NotificationSettings').then(module => ({ default: module.NotificationSettings })));
 
 function preloadNavigationPages() {
   return Promise.allSettled([
     import('@/pages/Dashboard'),
-    import('@/pages/Products'),
+    import('@/pages/ProductWorkspace'),
     import('@/pages/Agents'),
     import('@/pages/Orders'),
     import('@/pages/Tracking'),
     import('@/pages/RiskCenter'),
-    import('@/pages/MonthlyReport'),
-    import('@/pages/YearlyReport'),
-    import('@/pages/ProductAnalysis'),
-    import('@/features/analytics/DailyTrends'),
-    import('@/features/analytics/RiskDashboard'),
+    import('@/pages/Reports'),
     import('@/features/analytics/NotificationSettings'),
   ]);
 }
@@ -174,16 +166,17 @@ function AuthenticatedApp({ desktopSidebarCollapsed, setDesktopSidebarCollapsed,
             {sync.data[0]?.generation === 'demo-synthetic' && <p role="status" className="mb-4 rounded bg-amber-100 p-3 text-amber-950">نسخة اختبار — بيانات اصطناعية وليست طلبات المتجر</p>}
             {!unavailable && <Suspense fallback={<p role="status">جاري فتح الصفحة...</p>}><Routes>
               <Route path="/" element={<ProtectedRoute><Dashboard orders={orders} trackingOrders={trackingOrders} /></ProtectedRoute>} />
-              <Route path="/products" element={<ProtectedRoute><Products trackingOrders={trackingOrders} /></ProtectedRoute>} />
+              <Route path="/products" element={<ProtectedRoute><ProductWorkspace trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/agents" element={<ProtectedRoute><Agents orders={orders} trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/orders" element={<ProtectedRoute><Orders orders={orders} /></ProtectedRoute>} />
               <Route path="/tracking" element={<ProtectedRoute><Tracking trackingOrders={trackingOrders} /></ProtectedRoute>} />
               <Route path="/risk" element={<ProtectedRoute><RiskCenter trackingOrders={trackingOrders} /></ProtectedRoute>} />
-              <Route path="/monthly-report" element={<ProtectedRoute><MonthlyReport trackingOrders={trackingOrders} /></ProtectedRoute>} />
-              <Route path="/yearly-report" element={<ProtectedRoute><YearlyReport trackingOrders={trackingOrders} /></ProtectedRoute>} />
-              <Route path="/product-analysis" element={<ProtectedRoute><ProductAnalysis trackingOrders={trackingOrders} /></ProtectedRoute>} />
-              <Route path="/daily-trends" element={<ProtectedRoute><DailyTrends trackingOrders={trackingOrders} /></ProtectedRoute>} />
-              <Route path="/risk-dashboard" element={<ProtectedRoute><RiskDashboard trackingOrders={trackingOrders} /></ProtectedRoute>} />
+              <Route path="/reports" element={<ProtectedRoute><Reports trackingOrders={trackingOrders} /></ProtectedRoute>} />
+              <Route path="/monthly-report" element={<Navigate to="/reports?view=monthly" replace />} />
+              <Route path="/yearly-report" element={<Navigate to="/reports?view=yearly" replace />} />
+              <Route path="/daily-trends" element={<Navigate to="/reports?view=daily" replace />} />
+              <Route path="/product-analysis" element={<Navigate to="/products?view=analysis" replace />} />
+              <Route path="/risk-dashboard" element={<Navigate to="/risk" replace />} />
               <Route path="/notifications" element={<ProtectedRoute><NotificationSettings /></ProtectedRoute>} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />

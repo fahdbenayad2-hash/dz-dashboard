@@ -30,10 +30,11 @@ export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }
     const d = new Date(); d.setDate(1); return toInputDate(d);
   });
   const [dateTo, setDateTo] = useState(() => toInputDate(new Date()));
-  const from = new Date(dateFrom + 'T00:00:00');
-  const to = new Date(dateTo + 'T23:59:59');
+  const from = useMemo(() => new Date(dateFrom + 'T00:00:00+01:00'), [dateFrom]);
+  const to = useMemo(() => new Date(dateTo + 'T23:59:59.999+01:00'), [dateTo]);
   const { products, top, totalOrders, deliveredRevenue } = useProductData(trackingOrders, from, to);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
 
   const {
@@ -54,9 +55,13 @@ export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }
     const q = search.toLowerCase();
     return products.filter(p => p.name.toLowerCase().includes(q));
   }, [products, search]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / 25));
+  const currentPage = Math.min(page, totalPages - 1);
+  const visibleProducts = filtered.slice(currentPage * 25, (currentPage + 1) * 25);
 
   return (
     <div className="space-y-4">
+      <p className="text-xs leading-6 text-[var(--color-text-muted)]">كل منتج داخل السلة محسوب باسمه وكمّيته. عدد الطلبات فريد في الإجمالي؛ قد يظهر الطلب في عدة منتجات. إيراد كل منتج يشمل حصته النسبية من شحن السلة وأي تعديل على مبلغها. هذه الحصص توزيع حسابي وليست أسعاراً مسجلة منفصلة.</p>
       {/* Tabs */}
       <div className="flex items-center gap-1 rounded-lg bg-gray-100 dark:bg-gray-800/50 p-1 w-fit">
         <button
@@ -149,7 +154,7 @@ export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }
                 <Input
                   placeholder="بحث عن منتج..."
                   value={search}
-                  onChange={e => setSearch(e.target.value)}
+                  onChange={e => { setSearch(e.target.value); setPage(0); }}
                   className="w-56"
                 />
               </div>
@@ -161,15 +166,16 @@ export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }
                   <TableRow>
                     <TableHead>المنتج</TableHead>
                     <TableHead>عدد الطلبات</TableHead>
+                    <TableHead>القطع / المسلّمة</TableHead>
                     <TableHead>تم التوصيل</TableHead>
                     <TableHead>مرتجع</TableHead>
-                    <TableHead>معدل التوصيل</TableHead>
+                    <TableHead>التوصيل من المحسوم</TableHead>
                     <TableHead>الإيراد الإجمالي</TableHead>
                     <TableHead>متوسط قيمة الطلب</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map(p => {
+                  {visibleProducts.map(p => {
                     const badgeVariant = p.deliveryRate >= 65 ? 'success' : p.deliveryRate >= 50 ? 'warning' as const : 'danger' as const;
                     return (
                       <TableRow
@@ -179,6 +185,7 @@ export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }
                       >
                         <TableCell className="font-medium max-w-48 truncate">{p.name}</TableCell>
                         <TableCell className="tabular-nums">{p.orders}</TableCell>
+                        <TableCell>{p.units ?? 'غير متاح'} / {p.deliveredUnits ?? 'غير متاح'}</TableCell>
                         <TableCell className="tabular-nums text-[var(--color-success)]">{p.delivered}</TableCell>
                         <TableCell className="tabular-nums text-[var(--color-danger)]">{p.returned}</TableCell>
                         <TableCell>
@@ -190,11 +197,12 @@ export function Products({ trackingOrders }: { trackingOrders: TrackingOrder[] }
                     );
                   })}
                   {filtered.length === 0 && (
-                    <TableRow><TableCell colSpan={7} className="text-center text-[var(--color-text-muted)] py-8">لا توجد منتجات</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={8} className="text-center text-[var(--color-text-muted)] py-8">لا توجد منتجات</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
             </div>
+            <div className="mt-4 flex items-center justify-between"><span className="text-xs">{currentPage + 1} / {totalPages}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>السابق</Button><Button size="sm" variant="outline" disabled={currentPage + 1 >= totalPages} onClick={() => setPage(currentPage + 1)}>التالي</Button></div></div>
           </CardContent>
         </Card>
       </>

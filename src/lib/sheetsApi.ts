@@ -1,4 +1,5 @@
 import type { Order, OrderStatus, TrackingOrder } from '@/types';
+import { parseOrderItems, itemDescription } from './orderItems';
 
 import { classifyTrackingStatus } from './status';
 export { classifyTrackingStatus } from './status';
@@ -36,6 +37,7 @@ export async function fetchOrders(signal?: AbortSignal): Promise<Order[]> {
       if (!cells) return acc;
       const id = Number(cells[0]?.v) || 0;
       if (id <= 0) return acc;
+      const items = parseOrderItems(cells[10]?.v);
       acc.push({
         id,
         date: String(cells[1]?.f || cells[1]?.v || ''),
@@ -43,7 +45,8 @@ export async function fetchOrders(signal?: AbortSignal): Promise<Order[]> {
         phone: String(cells[3]?.v || ''),
         wilaya: String(cells[4]?.v || ''),
         status: String(cells[5]?.v || 'Pending') as OrderStatus,
-        product: String(cells[6]?.v || ''),
+        product: itemDescription(items, String(cells[6]?.v || '')),
+        items,
         total: Number(cells[7]?.v) || 0,
         delivery: Number(cells[8]?.v) || 0,
         agent: String(cells[9]?.v || ''),
@@ -65,6 +68,7 @@ export async function fetchTracking(signal?: AbortSignal): Promise<TrackingOrder
       const rawDate = String(cells[1]?.f || cells[1]?.v || '');
       const parsedDate = rawDate ? new Date(rawDate) : null;
       const date = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null;
+      const items = parseOrderItems(cells[10]?.v);
       acc.push({
         orderId,
         date,
@@ -73,7 +77,8 @@ export async function fetchTracking(signal?: AbortSignal): Promise<TrackingOrder
         wilaya: String(cells[4]?.v || ''),
         trackingStatus: rawStatus,
         statusCategory: classifyTrackingStatus(rawStatus),
-        product: String(cells[6]?.v || ''),
+        product: itemDescription(items, String(cells[6]?.v || '')),
+        items,
         total: Number(cells[7]?.v) || 0,
         delivery: Number(cells[8]?.v) || 0,
         driver: String(cells[9]?.v || ''),

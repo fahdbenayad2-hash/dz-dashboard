@@ -1,6 +1,12 @@
 export type StatusCategory = 'delivered' | 'returned' | 'transit' | 'delivery' | 'others';
+export interface OrderItem { productId: string; name: string; quantity: number | null; unitPrice: number | null }
 
 export interface TrackingOrder {
+  items?: OrderItem[];
+  quantity?: number;
+  itemDataMissing?: boolean;
+  basketAllocated?: boolean;
+  orderShare?: number;
   orderId: string;
   date: Date | null;
   agent: string;
@@ -15,6 +21,7 @@ export interface TrackingOrder {
 }
 
 export interface Order {
+  items?: OrderItem[];
   id: number;
   date: string;
   customer: string;
@@ -127,6 +134,10 @@ export interface ProductPeriodFilter {
 
 export interface ProductPeriodData {
   totalOrders: number;
+  units: number;
+  deliveredUnits: number;
+  returnedUnits: number;
+  quantityDataComplete: boolean;
   delivered: number;
   returned: number;
   inProgress: number;
@@ -135,9 +146,9 @@ export interface ProductPeriodData {
   cancellationRate: number;
   deliveryRate: number;
   grossRevenue: number;
-  deliveryCostPaid: number;
+  shippingRevenue: number;
   netRevenue: number;
-  returnShippingLoss: number;
+  returnedShippingQuote: number;
   returnedProductValue: number;
   avgOrderValue: number;
   avgDeliveryCost: number;
@@ -162,7 +173,7 @@ export interface ProductFinancialAnalysis {
   totalShippingPaid: number;
   totalPackaging: number;
   returnTotalCost: number;
-  variableCostPerOrder: number;
+  variableCostPerUnit: number;
   profitPerUnit: number;
   trueNetProfit: number;
   trueNetMargin: number;

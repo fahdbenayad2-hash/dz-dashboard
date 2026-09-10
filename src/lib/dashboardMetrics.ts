@@ -1,4 +1,5 @@
 import { businessDate } from './businessDate';
+import { expandProductOrders } from './orderItems';
 import type { Order, TrackingOrder } from '@/types';
 
 import { normalizeStatus } from './status';
@@ -47,7 +48,6 @@ export function getStatusDistribution(orders: Order[]) {
     { status: 'Pending', value: orders.filter(o => normalizeStatus(o.status) === 'Pending').length },
     { status: 'Waiting', value: orders.filter(o => normalizeStatus(o.status) === 'Waiting').length },
   ];
-  console.log('[DZ-CHANGE] status-distribution', distribution);
   return distribution;
 }
 
@@ -72,7 +72,6 @@ export function getDailyConfirmedRevenue(orders: Order[], days: number) {
     };
   });
 
-  console.log('[DZ-CHANGE] revenue-trend-14d', trendData);
   return trendData;
 }
 
@@ -145,7 +144,6 @@ export function getSettledMetrics(tracking: TrackingOrder[]) {
   const avgOrderValue = delivered.length > 0 ? deliveredRevenue / delivered.length : 0;
   const netRevenue = delivered.reduce((s, t) => s + t.total - t.delivery, 0);
   const result = { settledCount: settled, deliveredCount: delivered.length, returnedCount: returned.length, cancellationRate, deliveryRate, deliveredRevenue, avgOrderValue, netRevenue };
-  console.log('[DZ-CHANGE] settled-metrics', { settledCount: result.settledCount, cancellationRate: result.cancellationRate, deliveryRate: result.deliveryRate });
   return result;
 }
 
@@ -202,7 +200,7 @@ export function getWilayaCountsTracking(tracking: TrackingOrder[]) {
 
 export function getProductCountsTracking(tracking: TrackingOrder[]) {
   const map = new Map<string, number>();
-  tracking
+  expandProductOrders(tracking)
     .filter(t => t.statusCategory === 'delivered')
     .forEach(t => {
       if (t.product) map.set(t.product, (map.get(t.product) || 0) + t.total);
@@ -212,7 +210,7 @@ export function getProductCountsTracking(tracking: TrackingOrder[]) {
 
 export function getProductOrderCountsTracking(tracking: TrackingOrder[]) {
   const map = new Map<string, number>();
-  tracking
+  expandProductOrders(tracking)
     .filter(t => t.statusCategory === 'delivered')
     .forEach(t => {
       if (t.product) map.set(t.product, (map.get(t.product) || 0) + 1);
@@ -221,14 +219,17 @@ export function getProductOrderCountsTracking(tracking: TrackingOrder[]) {
 }
 
 export function getProductPerformance(tracking: TrackingOrder[]) {
-  const map = new Map<string, { orders: number; delivered: number; returned: number; deliveredRevenue: number }>();
-  tracking.forEach(t => {
+  const map = new Map<string, { orders: number; delivered: number; returned: number; deliveredRevenue: number; units: number; deliveredUnits: number; unknownQuantity: boolean }>();
+  expandProductOrders(tracking).forEach(t => {
     if (!t.product) return;
-    const current = map.get(t.product) || { orders: 0, delivered: 0, returned: 0, deliveredRevenue: 0 };
+    const current = map.get(t.product) || { orders: 0, delivered: 0, returned: 0, deliveredRevenue: 0, units: 0, deliveredUnits: 0, unknownQuantity: false };
     current.orders++;
+    current.units += t.quantity ?? 0;
+    current.unknownQuantity ||= t.quantity === undefined;
     if (t.statusCategory === 'delivered') {
       current.delivered++;
       current.deliveredRevenue += t.total;
+      current.deliveredUnits += t.quantity ?? 0;
     }
     if (t.statusCategory === 'returned') current.returned++;
     map.set(t.product, current);
@@ -242,6 +243,8 @@ export function getProductPerformance(tracking: TrackingOrder[]) {
         orders: values.orders,
         delivered: values.delivered,
         returned: values.returned,
+        units: values.unknownQuantity ? null : values.units,
+        deliveredUnits: values.unknownQuantity ? null : values.deliveredUnits,
         revenue: values.deliveredRevenue,
         deliveryRate: settled > 0 ? values.delivered / settled * 100 : 0,
         avgValue: values.delivered > 0 ? values.deliveredRevenue / values.delivered : 0,
@@ -252,7 +255,7 @@ export function getProductPerformance(tracking: TrackingOrder[]) {
   return {
     products,
     top: products[0] || null,
-    totalOrders: products.reduce((sum, product) => sum + product.orders, 0),
+    totalOrders: tracking.length,
     deliveredRevenue: products.reduce((sum, product) => sum + product.revenue, 0),
   };
 }
@@ -279,19 +282,15 @@ export function getDailyRevenueTracking(tracking: TrackingOrder[], days: number,
     return getDateISOString(d);
   });
 
-  return dateLabels.map(date => {
-    const dayOrders = tracking.filter(t => {
-      if (!isValidDate(t.date)) return false;
-      return getDateISOString(t.date) === date;
-    });
-    return {
-      date,
-      revenue: dayOrders
-        .filter(t => t.statusCategory === 'delivered')
-        .reduce((s, t) => s + t.total, 0),
-      orders: dayOrders.length,
-    };
-  });
+  const daily = new Map(dateLabels.map(date => [date, { date, revenue: 0, orders: 0 }]));
+  for (const order of tracking) {
+    if (!isValidDate(order.date)) continue;
+    const day = daily.get(getDateISOString(order.date));
+    if (!day) continue;
+    day.orders++;
+    if (order.statusCategory === 'delivered') day.revenue += order.total;
+  }
+  return [...daily.values()];
 }
 
 export function filterTrackingLastDays(tracking: TrackingOrder[], days: number) {
@@ -315,7 +314,6 @@ export function getMonthlyBreakdown(tracking: TrackingOrder[], yearMonth: string
   });
   const daysInMonth = new Date(parseInt(yearMonth.split('-')[0]), parseInt(yearMonth.split('-')[1]), 0).getDate();
   const lastDayOfMonth = new Date(parseInt(yearMonth.split('-')[0]), parseInt(yearMonth.split('-')[1]), 0);
-  console.log('[DZ-CHANGE] monthly-breakdown', { yearMonth, total: filtered.length, daysInMonth });
   return {
     orders: filtered,
     metrics: getTrackingMetrics(filtered),
@@ -434,7 +432,7 @@ export function getYearComparison(tracking: TrackingOrder[], year: number) {
 
 export function getYearlyTopProducts(tracking: TrackingOrder[], year: number, limit = 15) {
   const map = new Map<string, { revenue: number; orders: number; delivered: number; returned: number }>();
-  tracking
+  expandProductOrders(tracking)
     .filter(t => isValidDate(t.date) && t.date.getFullYear() === year && t.product)
     .forEach(t => {
       const e = map.get(t.product) || { revenue: 0, orders: 0, delivered: 0, returned: 0 };
@@ -508,11 +506,23 @@ export function getAgentLast7Days(tracking: TrackingOrder[]) {
     d.setDate(d.getDate() - (6 - i));
     return getDateISOString(d);
   });
-  return days.map(date => ({
-    date,
-    label: date.slice(5),
-    agents: getAgentDailyStats(tracking, date),
-  }));
+  const daySet = new Set(days);
+  const grouped = new Map(days.map(day => [day, new Map<string, { orders: number; delivered: number; returned: number; revenue: number }>()]));
+  for (const order of tracking) {
+    if (!order.agent || !isValidDate(order.date)) continue;
+    const day = getDateISOString(order.date);
+    if (!daySet.has(day)) continue;
+    const agents = grouped.get(day)!;
+    const row = agents.get(order.agent) ?? { orders: 0, delivered: 0, returned: 0, revenue: 0 };
+    row.orders++;
+    if (order.statusCategory === 'delivered') { row.delivered++; row.revenue += order.total; }
+    if (order.statusCategory === 'returned') row.returned++;
+    agents.set(order.agent, row);
+  }
+  return days.map(date => ({ date, label: date.slice(5), agents: [...grouped.get(date)!.entries()].map(([name, row]) => ({
+    name, ...row, settled: row.delivered + row.returned,
+    cancellationRate: row.delivered + row.returned > 0 ? row.returned / (row.delivered + row.returned) * 100 : null,
+  })).sort((a, b) => b.orders - a.orders) }));
 }
 
 export function getAgentDailyVsMonthlyAvg(tracking: TrackingOrder[], agentName: string) {
