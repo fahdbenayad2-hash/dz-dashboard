@@ -170,8 +170,8 @@ function dzSyncTick() {
       }
       if (!progress.done) return;
     }
-    // Publication is a separate bounded execution, never after a long fetch pass.
-    if (Date.now() - start > 30000) return;
+    // Publication now runs entirely on the Sheets backend and stays bounded even
+    // after a long fetch pass, so completed data does not wait for the next trigger.
     dzPublish_(ss, state);
     props.setProperty('DZ_SYNC_LAST_SUCCESS', JSON.stringify({ generation: state.generation, completedAt: new Date().toISOString() }));
     props.deleteProperty('DZ_SYNC_ERROR');

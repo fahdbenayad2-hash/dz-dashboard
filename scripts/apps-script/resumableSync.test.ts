@@ -4,6 +4,9 @@ import { describe, expect, it } from 'vitest';
 const source = readFileSync(new URL('./ResumableSync.gs', import.meta.url), 'utf8');
 function core() { return runInNewContext(source + ';({page: dzPageProgress_, map: dzMapRow_, merge: dzMergeRows_})', { }); }
 describe('resumable synchronization invariants', () => {
+  it('publishes a completed fetch without waiting for the next scheduled trigger', () => {
+    expect(source).not.toContain('Date.now() - start > 30000');
+  });
   it('advances offset by rows and page mode by one', () => {
     const c = core(), data = { data: [{}, {}], all_count: 4 };
     expect(c.page(data, 0, 0, 2, 'offset', null).cursor).toBe(2);
