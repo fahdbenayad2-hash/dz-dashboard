@@ -31,7 +31,7 @@ export function Sidebar({ desktopCollapsed, mobileOpen, onToggleDesktop, onClose
       <aside
         dir="rtl"
         className={classNames(
-          'fixed right-0 top-0 z-40 flex h-dvh w-72 flex-col border-l border-white/10 bg-[var(--color-sidebar)] shadow-2xl md:w-64 md:shadow-none',
+          'fixed right-0 top-0 z-40 flex h-dvh w-72 flex-col border-l border-white/10 bg-[var(--color-sidebar)] shadow-2xl md:shadow-none',
           'transition-transform duration-300 ease-in-out motion-reduce:transition-none',
           mobileOpen ? 'translate-x-0' : 'translate-x-full',
           'md:translate-x-0 md:transition-[width] md:duration-300',
@@ -93,6 +93,7 @@ export function Sidebar({ desktopCollapsed, mobileOpen, onToggleDesktop, onClose
               desktopCollapsed && 'justify-center px-0',
             )}
             aria-label={desktopCollapsed ? 'توسيع القائمة' : 'طي القائمة'}
+            aria-expanded={!desktopCollapsed}
           >
             {desktopCollapsed ? <Menu className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
             {!desktopCollapsed && <span>طي القائمة</span>}
