@@ -13,15 +13,16 @@ import { useAutoSnapshot } from '@/hooks/useAutoSnapshot';
 import { checkSession, logout } from '@/lib/auth';
 import { classNames } from '@/lib/utils';
 import { Loader2 } from 'lucide-react';
+import { retryImport } from '@/lib/retryImport';
 
-const Dashboard = lazy(() => import('@/pages/Dashboard').then(module => ({ default: module.Dashboard })));
-const ProductWorkspace = lazy(() => import('@/pages/ProductWorkspace').then(module => ({ default: module.ProductWorkspace })));
-const Agents = lazy(() => import('@/pages/Agents').then(module => ({ default: module.Agents })));
-const Orders = lazy(() => import('@/pages/Orders').then(module => ({ default: module.Orders })));
-const Tracking = lazy(() => import('@/pages/Tracking').then(module => ({ default: module.Tracking })));
-const RiskCenter = lazy(() => import('@/pages/RiskCenter').then(module => ({ default: module.RiskCenter })));
-const Reports = lazy(() => import('@/pages/Reports').then(module => ({ default: module.Reports })));
-const NotificationSettings = lazy(() => import('@/features/analytics/NotificationSettings').then(module => ({ default: module.NotificationSettings })));
+const Dashboard = lazy(() => retryImport(() => import('@/pages/Dashboard'), 'dashboard').then(module => ({ default: module.Dashboard })));
+const ProductWorkspace = lazy(() => retryImport(() => import('@/pages/ProductWorkspace'), 'products').then(module => ({ default: module.ProductWorkspace })));
+const Agents = lazy(() => retryImport(() => import('@/pages/Agents'), 'agents').then(module => ({ default: module.Agents })));
+const Orders = lazy(() => retryImport(() => import('@/pages/Orders'), 'orders').then(module => ({ default: module.Orders })));
+const Tracking = lazy(() => retryImport(() => import('@/pages/Tracking'), 'tracking').then(module => ({ default: module.Tracking })));
+const RiskCenter = lazy(() => retryImport(() => import('@/pages/RiskCenter'), 'risk').then(module => ({ default: module.RiskCenter })));
+const Reports = lazy(() => retryImport(() => import('@/pages/Reports'), 'reports').then(module => ({ default: module.Reports })));
+const NotificationSettings = lazy(() => retryImport(() => import('@/features/analytics/NotificationSettings'), 'notifications').then(module => ({ default: module.NotificationSettings })));
 
 function preloadNavigationPages() {
   return Promise.allSettled([

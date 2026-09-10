@@ -1,9 +1,10 @@
 import { lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { TrackingOrder } from '@/types';
+import { retryImport } from '@/lib/retryImport';
 
-const Products = lazy(() => import('./Products').then(module => ({ default: module.Products })));
-const ProductAnalysis = lazy(() => import('./ProductAnalysis').then(module => ({ default: module.ProductAnalysis })));
+const Products = lazy(() => retryImport(() => import('./Products'), 'product-performance').then(module => ({ default: module.Products })));
+const ProductAnalysis = lazy(() => retryImport(() => import('./ProductAnalysis'), 'product-analysis').then(module => ({ default: module.ProductAnalysis })));
 
 export function ProductWorkspace({ trackingOrders }: { trackingOrders: TrackingOrder[] }) {
   const [params, setParams] = useSearchParams();
