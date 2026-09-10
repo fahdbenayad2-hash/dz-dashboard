@@ -178,16 +178,16 @@ function dzSyncTick() {
     props.deleteProperty('DZ_SYNC_STATE');
   } catch (_) {
     var reason = String(_.message || '');
-    var safeCode = /^[A-Z_]+$/.test(reason) ? reason : (/timed out/i.test(reason) ? 'GOOGLE_SHEETS_TIMEOUT' : 'UPSTREAM_ERROR');
+    var codeMatch = reason.match(/^([A-Z_]+)/);
+    var safeCode = codeMatch ? codeMatch[1] : (/timed out/i.test(reason) ? 'GOOGLE_SHEETS_TIMEOUT' : 'UPSTREAM_ERROR');
     console.log('SYNC_ERROR_CODE=' + safeCode);
-    props.setProperty('DZ_SYNC_ERROR', JSON.stringify({ at: new Date().toISOString(), code: 'SYNC_FAILED_REVIEW_EXECUTION' }));
+    props.setProperty('DZ_SYNC_ERROR', JSON.stringify({ at: new Date().toISOString(), code: safeCode }));
     throw new Error('SYNC_FAILED: last published data retained; inspect configuration, pagination and staging');
   } finally { lock.releaseLock(); }
 }
 
 function dzPublish_(ss, state) {
   var prefix = state.targetPrefix || '';
-  var props = PropertiesService.getScriptProperties();
   var existing = ss.getSheetByName(prefix + 'SyncStatus');
   if (existing && existing.getRange(2, 1, 1, 3).getValues()[0][0] === state.generation) return;
   var requests = [];
@@ -196,33 +196,19 @@ function dzPublish_(ss, state) {
     if (!progress.done) throw new Error('INCOMPLETE_RUN');
     var target = ss.getSheetByName(prefix + name);
     if (!target) throw new Error('TARGET_MISSING');
-    var publish = progress.publishSheetId ? ss.getSheetById(progress.publishSheetId) : null;
-    var height = Number(progress.publishHeight || 0);
-    if (!publish || !Number.isInteger(height) || height < 1) {
-      var stage = ss.getSheetById(progress.sheetId);
-      if (!stage) throw new Error('STAGING_MISSING');
-      var fresh = progress.received ? stage.getRange(2, 1, progress.received, 11).getValues() : [];
-      var archiveSheet = ss.getSheetByName(name === 'Orders' ? '_archive_orders' : '_archive_tracking');
-      var archive = archiveSheet && archiveSheet.getLastRow() > 1 ? archiveSheet.getRange(2, 1, archiveSheet.getLastRow() - 1, 10).getValues() : [];
-      var merged = dzMergeRows_(fresh, archive);
-      // Unexpected large drops need an explicit investigation before publication.
-      if (target.getLastRow() > 100 && merged.length < (target.getLastRow() - 1) * 0.8) throw new Error('UNEXPECTED_COUNT_DROP');
-      height = Math.max(merged.length + 1, target.getLastRow(), stage.getMaxRows());
-      // Keep original page staging immutable, including on publication retries.
-      var headers = stage.getRange(1, 1, 1, 11).getValues()[0];
-      var publishName = '_dz_publish_' + name + '_' + state.generation.slice(0, 8);
-      publish = ss.getSheetByName(publishName) || ss.insertSheet(publishName);
-      if (publish.getMaxRows() < height) publish.insertRowsAfter(publish.getMaxRows(), height - publish.getMaxRows());
-      publish.getRange(1, 1, height, 11).clearContent();
-      publish.getRange(1, 1, merged.length + 1, 11).setValues([headers].concat(merged));
-      publish.hideSheet();
-      SpreadsheetApp.flush();
-      progress.publishSheetId = publish.getSheetId();
-      progress.publishHeight = height;
-      props.setProperty('DZ_SYNC_STATE', JSON.stringify(state));
-    }
-    requests.push({ updateSheetProperties: { properties: { sheetId: target.getSheetId(), gridProperties: { rowCount: Math.max(height, target.getMaxRows()), columnCount: Math.max(11, target.getMaxColumns()) } }, fields: 'gridProperties.rowCount,gridProperties.columnCount' } });
-    requests.push({ copyPaste: { source: { sheetId: publish.getSheetId(), startRowIndex: 0, endRowIndex: height, startColumnIndex: 0, endColumnIndex: 11 }, destination: { sheetId: target.getSheetId(), startRowIndex: 0, endRowIndex: height, startColumnIndex: 0, endColumnIndex: 11 }, pasteType: 'PASTE_VALUES' } });
+    var stage = ss.getSheetById(progress.sheetId);
+    if (!stage) throw new Error('STAGING_MISSING');
+    var height = progress.received + 1;
+    if (progress.expected !== null && progress.received < progress.expected) throw new Error('INCOMPLETE_COUNT');
+    if (target.getLastRow() > 100 && height - 1 < (target.getLastRow() - 1) * 0.8) throw new Error('UNEXPECTED_COUNT_DROP');
+    // The paginated stage already contains the complete source. Copy it on the
+    // Sheets backend instead of reading and rewriting tens of thousands of cells
+    // in Apps Script, which can exceed the execution limit before publication.
+    requests.push({ updateSheetProperties: { properties: { sheetId: target.getSheetId(), gridProperties: { rowCount: height, columnCount: Math.max(11, target.getMaxColumns()) } }, fields: 'gridProperties.rowCount,gridProperties.columnCount' } });
+    requests.push({ copyPaste: { source: { sheetId: stage.getSheetId(), startRowIndex: 0, endRowIndex: height, startColumnIndex: 0, endColumnIndex: 11 }, destination: { sheetId: target.getSheetId(), startRowIndex: 0, endRowIndex: height, startColumnIndex: 0, endColumnIndex: 11 }, pasteType: 'PASTE_VALUES' } });
+    // Page boundaries may shift when new orders arrive during a long run. The
+    // source is newest-first, so retaining the first ID keeps the newest copy.
+    requests.push({ deleteDuplicates: { range: { sheetId: target.getSheetId(), startRowIndex: 1, endRowIndex: height, startColumnIndex: 0, endColumnIndex: 11 }, comparisonColumns: [{ sheetId: target.getSheetId(), dimension: 'COLUMNS', startIndex: 0, endIndex: 1 }] } });
   });
   var status = ss.getSheetByName(prefix + 'SyncStatus') || ss.insertSheet(prefix + 'SyncStatus');
   var values = [['Generation', 'CompletedAt', 'Status'], [state.generation, new Date().toISOString(), 'completed']];

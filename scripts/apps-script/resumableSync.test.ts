@@ -74,7 +74,7 @@ function harness(timeoutDuringSetup = false) {
   }, getSheetById: (id: number) => sheets.get(id), getSheetByName: (name: string) => [...sheets.values()].find(s => s.name === name), getId: () => 'synthetic' };
   ss.insertSheet('Orders').rows = [['ID'], [99, 'existing']];
   ss.insertSheet('Tracking').rows = [['ID'], [99, 'existing']];
-  let fail = false, slow = true, publications = 0;
+  let fail = false, slow = true, publications = 0, lastBatch: { requests: Record<string, unknown>[] } | null = null;
   const cursors: number[] = [];
   const ctx = {
     Date: class extends Date { static now() { return clock; } },
@@ -89,10 +89,10 @@ function harness(timeoutDuringSetup = false) {
       const order = { id: params.offset + 1, order_total: 100 };
       return { all_count: 2, data: params.offset >= 2 ? [] : [endpoint === 'orders' ? order : { order }] };
     },
-    Sheets: { Spreadsheets: { batchUpdate: () => { publications++; } } },
+    Sheets: { Spreadsheets: { batchUpdate: (body: { requests: Record<string, unknown>[] }) => { publications++; lastBatch = body; } } },
   };
   const tick = runInNewContext(source + ';dzSyncTick', ctx);
-  return { tick, properties, sheets, cursors, get publications() { return publications; }, set fail(value: boolean) { fail = value; }, set slow(value: boolean) { slow = value; } };
+  return { tick, properties, sheets, cursors, get publications() { return publications; }, get lastBatch() { return lastBatch; }, set fail(value: boolean) { fail = value; }, set slow(value: boolean) { slow = value; } };
 }
 it('resumes from checkpoints and keeps published data until both sources complete', () => {
   const h = harness();
@@ -107,6 +107,9 @@ it('resumes from checkpoints and keeps published data until both sources complet
   h.slow = false;
   h.tick();
   expect(h.publications).toBe(1);
+  expect(h.lastBatch!.requests.filter(request => 'copyPaste' in request)).toHaveLength(2);
+  expect(h.lastBatch!.requests.filter(request => 'deleteDuplicates' in request)).toHaveLength(2);
+  expect([...h.sheets.values()].some(sheet => sheet.name.startsWith('_dz_publish_'))).toBe(false);
   expect(h.properties.DZ_SYNC_STATE).toBeUndefined();
 });
 it('a failed page preserves its checkpoint and never publishes', () => {
