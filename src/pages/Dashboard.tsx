@@ -49,7 +49,7 @@ function useDashboardData(orders: Order[], tracking: TrackingOrder[], fromStr: s
 
     // Best product in period
     const topProduct = [...productSummary]
-      .sort((a, b) => b.orders - a.orders || b.revenue - a.revenue)[0] || null;
+      .sort((a, b) => b.revenue - a.revenue || b.orders - a.orders)[0] || null;
 
 
     return {
@@ -143,7 +143,7 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
 
         {data.topProduct && <Card className="top-product-panel overflow-hidden">
           <CardContent className="flex h-full flex-col justify-between gap-5">
-            <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15"><Trophy className="h-5 w-5" /></span><div><p className="text-xs text-white/70">أفضل منتج في الفترة</p><p className="mt-1 line-clamp-2 font-bold">{data.topProduct.name}</p></div></div>
+            <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15"><Trophy className="h-5 w-5" /></span><div><p className="text-xs text-white/70">المنتج الأعلى إيراداً في الفترة</p><p className="mt-1 line-clamp-2 font-bold">{data.topProduct.name}</p></div></div>
             <div className="grid grid-cols-2 gap-3"><div className="rounded-lg bg-white/10 p-3"><p className="text-xs text-white/70">طلبات مسلّمة</p><p className="mt-1 text-lg font-bold tabular-nums">{formatNumber(data.topProduct.orders)}</p></div><div className="rounded-lg bg-white/10 p-3"><p className="text-xs text-white/70">الإيراد</p><p className="mt-1 text-lg font-bold tabular-nums">{formatCurrency(data.topProduct.revenue)}</p></div></div>
           </CardContent>
         </Card>}
