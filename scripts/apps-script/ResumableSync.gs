@@ -73,8 +73,11 @@ function dzPageProgress_(data, cursor, received, limit, mode, expected) {
   if (!data || !Array.isArray(data.data) || data.data.length > limit) throw new Error('INVALID_PAGE');
   var total = data.all_count === undefined || data.all_count === null ? null : Number(data.all_count);
   if (total !== null && (!Number.isInteger(total) || total < 0)) throw new Error('INVALID_COUNT');
-  if (expected !== null && total !== null && total < expected) throw new Error('SOURCE_SHRANK_RESTART_REQUIRED');
-  if (expected !== null && total !== null && total > expected) expected = total;
+  // Octomatic is a live newest-first feed. Orders can be added, removed, or moved
+  // between pages while a generation is running, so all_count is an observation,
+  // not a stable snapshot boundary. The short final page remains authoritative.
+  if (expected !== null && total !== null && total !== expected) console.log('SOURCE_COUNT_CHANGED=' + expected + '->' + total);
+  if (expected !== null && total !== null) expected = total;
   if (expected === null) expected = total;
   var count = received + data.data.length;
   var done = data.data.length < limit;
@@ -118,6 +121,40 @@ function dzMergeRows_(fresh, archive) {
   return merged.sort(function (a, b) { return Number(b[0]) - Number(a[0]); });
 }
 
+function dzWriteStageRows_(ss, stage, startRowIndex, rows, expected) {
+  if (!rows.length) return;
+  // Avoid SpreadsheetService grid reads, which time out on this large workbook.
+  // Current sources are below 20k rows; updateSheetProperties is idempotent.
+  var targetRows = Math.max(20000, startRowIndex + rows.length);
+  var requests = [{ updateSheetProperties: { properties: { sheetId: stage.getSheetId(), gridProperties: { rowCount: targetRows, columnCount: 11 } }, fields: 'gridProperties.rowCount,gridProperties.columnCount' } }];
+  requests.push({ updateCells: {
+    start: { sheetId: stage.getSheetId(), rowIndex: startRowIndex, columnIndex: 0 },
+    rows: rows.map(function (row) { return { values: row.map(function (value) {
+      return { userEnteredValue: typeof value === 'number' ? { numberValue: value } : { stringValue: String(value === null || value === undefined ? '' : value) } };
+    }) }; }),
+    fields: 'userEnteredValue'
+  } });
+  // Stay below the Sheets API per-user write quota while preserving resumability.
+  Utilities.sleep(1100);
+  Sheets.Spreadsheets.batchUpdate({ requests: requests }, ss.getId());
+}
+
+function dzCompactStaging() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var requests = [];
+  ss.getSheets().forEach(function (sheet) {
+    if (!/^_dz_(Orders|Tracking)_/.test(sheet.getName())) return;
+    var rows = Math.max(1, sheet.getLastRow());
+    if (sheet.getMaxRows() === rows && sheet.getMaxColumns() === 11) return;
+    requests.push({ updateSheetProperties: {
+      properties: { sheetId: sheet.getSheetId(), gridProperties: { rowCount: rows, columnCount: 11 } },
+      fields: 'gridProperties.rowCount,gridProperties.columnCount'
+    } });
+  });
+  if (requests.length) Sheets.Spreadsheets.batchUpdate({ requests: requests }, ss.getId());
+  console.log('COMPACTED_STAGING_SHEETS=' + requests.length);
+}
+
 function dzSyncTick() {
   var props = PropertiesService.getScriptProperties();
   var mode = props.getProperty('DZ_PAGINATION_MODE');
@@ -129,6 +166,8 @@ function dzSyncTick() {
   var lock = LockService.getDocumentLock();
   if (!lock || !lock.tryLock(1000)) throw new Error('SYNC_BUSY_OR_NOT_BOUND');
   var ss = SpreadsheetApp.getActiveSpreadsheet(), start = Date.now();
+  var budgetMs = Number(props.getProperty('DZ_SYNC_BUDGET_MS') || 270000);
+  if (!Number.isInteger(budgetMs) || budgetMs < 30000 || budgetMs > 270000) throw new Error('INVALID_SYNC_BUDGET');
   try {
     var state = JSON.parse(props.getProperty('DZ_SYNC_STATE') || 'null');
     if (!state) {
@@ -154,17 +193,14 @@ function dzSyncTick() {
       var limit = progress.limit || (name === 'Orders' ? CONFIG.ORDERS_LIMIT : CONFIG.TRACKING_LIMIT);
       if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error('INVALID_BATCH_LIMIT');
       var endpoint = name === 'Orders' ? CONFIG.ORDERS_ENDPOINT : CONFIG.TRACKING_ENDPOINT;
-      while (!progress.done && Date.now() - start < 120000) {
+      while (!progress.done && Date.now() - start < budgetMs) {
         var data = apiGet_(endpoint, { offset: progress.cursor, limit: limit });
         var next = dzPageProgress_(data, progress.cursor, progress.received, limit, mode, progress.expected);
         var rows = data.data.map(function (item) { return dzMapRow_(name, item); });
-        if (rows.length) {
-          var required = progress.received + rows.length + 1;
-          if (stage.getMaxRows() < required) stage.insertRowsAfter(stage.getMaxRows(), required - stage.getMaxRows());
-          // Deterministic range: retry overwrites a page if execution died before checkpoint.
-          stage.getRange(progress.received + 2, 1, rows.length, 11).setValues(rows);
-          SpreadsheetApp.flush();
-        }
+        // Write through the Advanced Sheets API. Repeated insertRows/setValues/flush
+        // calls timed out on the large staging sheets and pinned the same checkpoint.
+        // The deterministic start row still makes a retry overwrite the same page.
+        dzWriteStageRows_(ss, stage, progress.received + 1, rows, next.expected);
         Object.keys(next).forEach(function (key) { progress[key] = next[key]; });
         props.setProperty('DZ_SYNC_STATE', JSON.stringify(state));
       }
@@ -178,10 +214,17 @@ function dzSyncTick() {
     props.deleteProperty('DZ_SYNC_STATE');
   } catch (_) {
     var reason = String(_.message || '');
-    var codeMatch = reason.match(/^([A-Z_]+)/);
+    var codeMatch = reason.match(/^([A-Z_]{2,})(?:\b|:)/);
     var safeCode = codeMatch ? codeMatch[1] : (/timed out/i.test(reason) ? 'GOOGLE_SHEETS_TIMEOUT' : 'UPSTREAM_ERROR');
     console.log('SYNC_ERROR_CODE=' + safeCode);
     props.setProperty('DZ_SYNC_ERROR', JSON.stringify({ at: new Date().toISOString(), code: safeCode }));
+    // Configuration changes and expired generations cannot make progress from the
+    // old checkpoint. Release only that checkpoint so the next trigger starts a
+    // clean generation; the last published sheets remain untouched.
+    if (/^(RUN_EXPIRED_RESTART_REQUIRED|PAGINATION_CHANGED_RESTART_REQUIRED|TARGET_CHANGED_RESTART_REQUIRED)$/.test(reason)) {
+      props.deleteProperty('DZ_SYNC_STATE');
+      props.setProperty('DZ_SYNC_LAST_RESTART', JSON.stringify({ at: new Date().toISOString(), code: safeCode }));
+    }
     throw new Error('SYNC_FAILED: last published data retained; inspect configuration, pagination and staging');
   } finally { lock.releaseLock(); }
 }

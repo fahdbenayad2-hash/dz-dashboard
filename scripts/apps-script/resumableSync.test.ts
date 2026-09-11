@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 const source = readFileSync(new URL('./ResumableSync.gs', import.meta.url), 'utf8');
-function core() { return runInNewContext(source + ';({page: dzPageProgress_, map: dzMapRow_, merge: dzMergeRows_})', { }); }
+function core() { return runInNewContext(source + ';({page: dzPageProgress_, map: dzMapRow_, merge: dzMergeRows_, write: dzWriteStageRows_})', { }); }
 describe('resumable synchronization invariants', () => {
   it('publishes a completed fetch without waiting for the next scheduled trigger', () => {
     expect(source).not.toContain('Date.now() - start > 30000');
@@ -18,10 +18,14 @@ describe('resumable synchronization invariants', () => {
     expect(() => c.page(null, 1, 2, 2, 'page', 4)).toThrow();
     expect(c.page({ data: [], all_count: 4 }, 2, 4, 2, 'page', 4).done).toBe(true);
   });
-  it('accepts source growth but rejects shrinkage', () => {
+  it('tracks both source growth and shrinkage while paging a live feed', () => {
     const c = core();
     expect(c.page({ data: [{}], all_count: 5 }, 1, 2, 2, 'page', 4).expected).toBe(5);
-    expect(() => c.page({ data: [{}], all_count: 3 }, 1, 2, 2, 'page', 4)).toThrow('SOURCE_SHRANK');
+    expect(c.page({ data: [{}], all_count: 3 }, 1, 2, 2, 'page', 4).expected).toBe(3);
+  });
+  it('uses a longer bounded fetch window so a normal generation can finish in one execution', () => {
+    expect(source).toContain("DZ_SYNC_BUDGET_MS') || 270000");
+    expect(source).toContain('budgetMs > 270000');
   });
   it('completes only at a short final page', () => {
     const c = core();
@@ -44,11 +48,16 @@ describe('resumable synchronization invariants', () => {
     expect(() => core().map('Orders', { order_total: 10 })).toThrow();
     expect(() => core().map('Tracking', { order: { id: 1, order_total: 'invalid' } })).toThrow();
   });
+  it('writes staging pages through one Advanced Sheets batch', () => {
+    expect(source).toContain('dzWriteStageRows_(ss, stage, progress.received + 1, rows, next.expected)');
+    expect(source).not.toContain('stage.insertRowsAfter');
+    expect(source).toContain('Utilities.sleep(1100)');
+  });
 });
 
 function harness(timeoutDuringSetup = false) {
   let clock = Date.now(), nextId = 1;
-  const properties: Record<string, string> = { DZ_PAGINATION_MODE: 'page', DZ_TARGET_PREFIX: 'production' };
+  const properties: Record<string, string> = { DZ_PAGINATION_MODE: 'page', DZ_TARGET_PREFIX: 'production', DZ_SYNC_BUDGET_MS: '120000' };
   const sheets = new Map<number, FakeSheet>();
   class FakeSheet {
     id = nextId++; rows: unknown[][] = []; maxRows = 1000;
@@ -84,7 +93,7 @@ function harness(timeoutDuringSetup = false) {
     PropertiesService: { getScriptProperties: () => ({ getProperty: (key: string) => properties[key] || null, setProperty: (key: string, value: string) => { properties[key] = value; }, deleteProperty: (key: string) => { delete properties[key]; } }) },
     LockService: { getDocumentLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, flush: () => {} },
-    Utilities: { getUuid: () => 'synthetic-generation' },
+    Utilities: { getUuid: () => 'synthetic-generation', sleep: () => {} },
     CONFIG: { ORDERS_HEADERS: Array(10).fill('h'), TRACKING_HEADERS: Array(10).fill('h'), ORDERS_LIMIT: 1, TRACKING_LIMIT: 1, ORDERS_ENDPOINT: 'orders', TRACKING_ENDPOINT: 'tracking' },
     apiGet_: (endpoint: string, params: { offset: number }) => {
       cursors.push(params.offset); if (fail) throw new Error('Network');
@@ -92,7 +101,9 @@ function harness(timeoutDuringSetup = false) {
       const order = { id: params.offset + 1, order_total: 100 };
       return { all_count: 2, data: params.offset >= 2 ? [] : [endpoint === 'orders' ? order : { order }] };
     },
-    Sheets: { Spreadsheets: { batchUpdate: (body: { requests: Record<string, unknown>[] }) => { publications++; lastBatch = body; } } },
+    Sheets: { Spreadsheets: { batchUpdate: (body: { requests: Record<string, unknown>[] }) => {
+      if (body.requests.some(request => 'copyPaste' in request)) { publications++; lastBatch = body; }
+    } } },
   };
   const tick = runInNewContext(source + ';dzSyncTick', ctx);
   return { tick, properties, sheets, cursors, get publications() { return publications; }, get lastBatch() { return lastBatch; }, set fail(value: boolean) { fail = value; }, set slow(value: boolean) { slow = value; } };

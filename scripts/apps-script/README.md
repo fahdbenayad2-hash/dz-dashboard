@@ -70,5 +70,30 @@ Before live installation:
    live trigger to dzSyncTick. Do not run both pipelines concurrently.
 
 Staging sheets are retained for recovery. Review and remove obsolete generations
-only after verifying the published data. Source changes or a run older than 24 hours
-require a reviewed restart; do not silently discard its recovery state.
+only after verifying the published data.
+
+On 2026-09-11 the production feed was found stuck at Orders page 120: the generation
+started with 9,530 orders, while the live Octomatic count later changed. The old code
+treated a lower `all_count` as a permanent failure and retried the same checkpoint
+every hour. Octomatic had already reached order 26,351 and 9,565 visible orders while
+the dashboard still ended at order 26,240. The sync now treats `all_count` as a live
+observation, finishes on the short final page, and keeps the newest copy when page
+boundaries shift. Its default fetch budget is 270 seconds (configurable from 30 to
+270 seconds with `DZ_SYNC_BUDGET_MS`) so a normal generation can finish in one Apps
+Script execution. Expired or configuration-mismatched checkpoints are released for
+the next trigger without changing the last published sheets.
+
+The same incident exposed a second blocker: retained staging sheets had brought the
+workbook close to Google Sheets' 10-million-cell limit, so adding another 50 rows
+failed on every retry. Stage writes now resize through the Advanced Sheets API and
+cap staging width at the 11 columns actually stored, reclaiming unused grid cells
+without deleting the published data.
+
+Stage writes are paced at 1.1 seconds per page to remain below the Sheets API's
+per-user write-request quota. Checkpoints are saved after each successful page, so
+a quota or network failure resumes at the last durable row.
+
+Stage writes also avoid `getMaxRows`, `getMaxColumns`, `insertRowsAfter`, and
+`SpreadsheetApp.flush`; those calls repeatedly timed out once the workbook became
+large. Each Advanced Sheets request keeps the stage at a narrow 20,000-row by
+11-column grid, enough for the observed 9,565 Orders and 16,567 Tracking records.
