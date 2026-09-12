@@ -125,7 +125,7 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
       <div className="overview-metrics">
         <PrimaryMetric icon={<ShoppingCart className="h-5 w-5" />} label="الطلبات المنشأة" value={formatNumber(data.ordersToday)} hint="كل الطلبات خلال الفترة" tone="primary" />
         <PrimaryMetric icon={<Truck className="h-5 w-5" />} label="معدل التوصيل" value={`${data.settledMetrics.deliveryRate.toFixed(1)}%`} hint={`من ${formatNumber(data.settledMetrics.settledCount)} طلب محسوم`} tone="success" />
-        <PrimaryMetric icon={<DollarSign className="h-5 w-5" />} label="إيراد المسلّم" value={formatCurrency(data.periodRevenue)} hint="للطلبات المسلّمة فقط" tone="success" />
+        <PrimaryMetric icon={<DollarSign className="h-5 w-5" />} label="دخل Octomatic" value={formatCurrency(data.netRevenue)} hint="الطلبات المسلّمة دون رسوم الشحن" tone="success" />
         <PrimaryMetric icon={<CircleAlert className="h-5 w-5" />} label="تحتاج تدخلاً" value={formatNumber(data.actionableOrders)} hint="معلقة أو في الانتظار حالياً" tone="danger" />
       </div>
 
@@ -157,8 +157,8 @@ export function Dashboard({ orders, trackingOrders }: { orders: Order[]; trackin
           <CompactMetric label="المرتجعات" value={formatNumber(data.returned)} tone="danger" />
           <CompactMetric label="قيد التوصيل" value={formatNumber(data.inTransit + data.inDelivery)} tone="warning" />
           <CompactMetric label="قيمة طلبات التتبع" value={formatCurrency(data.orderValue)} />
-          <CompactMetric label="قيمة المسلّم دون الشحن" value={formatCurrency(data.netRevenue)} tone="success" />
-          <CompactMetric label="متوسط الطلب المسلّم" value={formatCurrency(data.avgOrderValue)} />
+          <CompactMetric label="قيمة المسلّم مع الشحن" value={formatCurrency(data.periodRevenue)} />
+          <CompactMetric label="متوسط الطلب مع الشحن" value={formatCurrency(data.avgOrderValue)} />
         </CardContent>
       </Card>
 

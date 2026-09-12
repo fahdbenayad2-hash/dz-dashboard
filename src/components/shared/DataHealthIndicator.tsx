@@ -26,7 +26,9 @@ export function DataHealthIndicator({
   now,
 }: DataHealthIndicatorProps) {
   const completedTime = completedAt ? new Date(completedAt).getTime() : Number.NaN;
-  const stale = Number.isFinite(completedTime) && now - completedTime > 6 * 60 * 60 * 1000;
+  // The backend is expected to publish twice an hour. A successful browser read
+  // must not make an old Octomatic generation look current.
+  const stale = Number.isFinite(completedTime) && now - completedTime > 40 * 60 * 1000;
   const unavailable = (!ordersUpdated && !!ordersError) || (!trackingUpdated && !!trackingError);
   const warning = !unavailable && (stale || !!ordersError || !!trackingError || !completedAt);
 
@@ -34,7 +36,7 @@ export function DataHealthIndicator({
     : ordersError || trackingError ? 'تعذّر تحديث البيانات'
     : stale ? 'المزامنة متأخرة'
     : !completedAt ? 'وقت المزامنة غير متاح'
-    : 'البيانات محدّثة';
+    : 'مزامنة Octomatic محدّثة';
   const Icon = unavailable ? XCircle : warning ? AlertTriangle : CheckCircle2;
 
   return (

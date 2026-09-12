@@ -113,3 +113,10 @@ remain the durable recovery copy.
 The completed migration is recorded once as `DZ_STAGING_MIGRATED=true`. Later hourly
 runs skip the expensive workbook-wide staging scan, which otherwise can time out even
 after obsolete sheets have already been removed.
+
+On 2026-09-12 a live read-only limit probe showed that Orders accepts 50 rows per
+request, while Tracking accepts 50, 100, 200, and 500 rows. Production therefore
+uses `DZ_TRACKING_BATCH=500`. Run `dzInstallSyncTrigger` once to replace older
+`dzSyncTick` clocks with one 30-minute clock (or set the validated
+`DZ_SYNC_INTERVAL_MINUTES` to 15). The 30-minute default keeps the consumer Apps
+Script daily runtime below the likely quota while cutting the previous one-hour lag.

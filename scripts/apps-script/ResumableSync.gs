@@ -121,6 +121,22 @@ function dzMergeRows_(fresh, archive) {
   return merged.sort(function (a, b) { return Number(b[0]) - Number(a[0]); });
 }
 
+/**
+ * Installs the single production trigger after removing older dzSyncTick clocks.
+ * The live Octomatic probe accepts 500 Tracking rows but caps Orders at 50.
+ */
+function dzInstallSyncTrigger() {
+  var props = PropertiesService.getScriptProperties();
+  var minutes = Number(props.getProperty('DZ_SYNC_INTERVAL_MINUTES') || 30);
+  if ([15, 30].indexOf(minutes) === -1) throw new Error('INVALID_SYNC_INTERVAL');
+  ScriptApp.getProjectTriggers().forEach(function (trigger) {
+    if (trigger.getHandlerFunction() === 'dzSyncTick') ScriptApp.deleteTrigger(trigger);
+  });
+  props.setProperty('DZ_TRACKING_BATCH', '500');
+  ScriptApp.newTrigger('dzSyncTick').timeBased().everyMinutes(minutes).create();
+  console.log('SYNC_TRIGGER_INSTALLED minutes=' + minutes + ' trackingBatch=500');
+}
+
 function dzStageName_(name, targetPrefix) {
   return '_dz_stage_' + (targetPrefix ? 'test_' : '') + name;
 }

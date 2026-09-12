@@ -4,6 +4,11 @@ import { describe, expect, it } from 'vitest';
 const source = readFileSync(new URL('./ResumableSync.gs', import.meta.url), 'utf8');
 function core() { return runInNewContext(source + ';({page: dzPageProgress_, map: dzMapRow_, merge: dzMergeRows_, write: dzWriteStageRows_, stageName: dzStageName_})', { }); }
 describe('resumable synchronization invariants', () => {
+  it('installs one half-hour production clock and uses the verified Tracking page size', () => {
+    expect(source).toContain("DZ_SYNC_INTERVAL_MINUTES') || 30");
+    expect(source).toContain("setProperty('DZ_TRACKING_BATCH', '500')");
+    expect(source).toContain("getHandlerFunction() === 'dzSyncTick'");
+  });
   it('publishes a completed fetch without waiting for the next scheduled trigger', () => {
     expect(source).not.toContain('Date.now() - start > 30000');
   });
