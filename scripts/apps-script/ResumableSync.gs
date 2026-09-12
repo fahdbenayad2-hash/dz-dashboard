@@ -121,11 +121,52 @@ function dzMergeRows_(fresh, archive) {
   return merged.sort(function (a, b) { return Number(b[0]) - Number(a[0]); });
 }
 
+function dzStageName_(name, targetPrefix) {
+  return '_dz_stage_' + (targetPrefix ? 'test_' : '') + name;
+}
+
+function dzPrepareStage_(ss, name, targetPrefix) {
+  var stageName = dzStageName_(name, targetPrefix);
+  var sheet = ss.getSheetByName(stageName) || ss.insertSheet(stageName);
+  var headers = (name === 'Orders' ? CONFIG.ORDERS_HEADERS : CONFIG.TRACKING_HEADERS).concat(['ItemsRaw']);
+  var headerRow = { values: headers.map(function (value) { return { userEnteredValue: { stringValue: String(value) } }; }) };
+  Sheets.Spreadsheets.batchUpdate({ requests: [
+    { updateSheetProperties: { properties: { sheetId: sheet.getSheetId(), gridProperties: { rowCount: 1, columnCount: 11 } }, fields: 'gridProperties.rowCount,gridProperties.columnCount' } },
+    { updateCells: { start: { sheetId: sheet.getSheetId(), rowIndex: 0, columnIndex: 0 }, rows: [headerRow], fields: 'userEnteredValue' } }
+  ] }, ss.getId());
+  sheet.hideSheet();
+  return sheet;
+}
+
+function dzPruneLegacyStaging_(ss, state) {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty('DZ_STAGING_MIGRATED') === 'true') return;
+  var keep = Object.create(null);
+  if (state && state.sources) Object.keys(state.sources).forEach(function (name) {
+    var source = state.sources[name];
+    if (source && source.sheetId) keep[String(source.sheetId)] = true;
+  });
+  var requests = [];
+  ss.getSheets().forEach(function (sheet) {
+    if (!/^_dz_(Orders|Tracking)_[A-Za-z0-9-]+$/.test(sheet.getName())) return;
+    if (!keep[String(sheet.getSheetId())]) requests.push({ deleteSheet: { sheetId: sheet.getSheetId() } });
+  });
+  if (requests.length) Sheets.Spreadsheets.batchUpdate({ requests: requests }, ss.getId());
+  if (requests.length) console.log('PRUNED_LEGACY_STAGING=' + requests.length);
+  // Only a pass with no active legacy generation proves migration is complete.
+  if (!state) props.setProperty('DZ_STAGING_MIGRATED', 'true');
+}
+
+function dzMarkStagingMigrationComplete() {
+  PropertiesService.getScriptProperties().setProperty('DZ_STAGING_MIGRATED', 'true');
+  console.log('STAGING_MIGRATION_MARKED_COMPLETE');
+}
+
 function dzWriteStageRows_(ss, stage, startRowIndex, rows, expected) {
   if (!rows.length) return;
   // Avoid SpreadsheetService grid reads, which time out on this large workbook.
-  // Current sources are below 20k rows; updateSheetProperties is idempotent.
-  var targetRows = Math.max(20000, startRowIndex + rows.length);
+  // Grow only to the durable checkpoint instead of reserving 20k rows per stage.
+  var targetRows = Math.max(1, startRowIndex + rows.length);
   var requests = [{ updateSheetProperties: { properties: { sheetId: stage.getSheetId(), gridProperties: { rowCount: targetRows, columnCount: 11 } }, fields: 'gridProperties.rowCount,gridProperties.columnCount' } }];
   requests.push({ updateCells: {
     start: { sheetId: stage.getSheetId(), rowIndex: startRowIndex, columnIndex: 0 },
@@ -134,8 +175,6 @@ function dzWriteStageRows_(ss, stage, startRowIndex, rows, expected) {
     }) }; }),
     fields: 'userEnteredValue'
   } });
-  // Stay below the Sheets API per-user write quota while preserving resumability.
-  Utilities.sleep(1100);
   Sheets.Spreadsheets.batchUpdate({ requests: requests }, ss.getId());
 }
 
@@ -170,16 +209,18 @@ function dzSyncTick() {
   if (!Number.isInteger(budgetMs) || budgetMs < 30000 || budgetMs > 270000) throw new Error('INVALID_SYNC_BUDGET');
   try {
     var state = JSON.parse(props.getProperty('DZ_SYNC_STATE') || 'null');
+    // Older versions created two new staging sheets every generation. Remove all
+    // obsolete generations before writing, while preserving a resumable active run.
+    dzPruneLegacyStaging_(ss, state);
     if (!state) {
       state = { generation: Utilities.getUuid(), startedAt: new Date().toISOString(), mode: mode, targetPrefix: targetPrefix, sources: {} };
       props.setProperty('DZ_SYNC_STATE', JSON.stringify(state));
     }
       ['Orders', 'Tracking'].forEach(function (name) {
         if (state.sources[name]) return;
-        var stageName = '_dz_' + name + '_' + state.generation.slice(0, 8);
-        var sheet = ss.getSheetByName(stageName) || ss.insertSheet(stageName);
-        var headers = (name === 'Orders' ? CONFIG.ORDERS_HEADERS : CONFIG.TRACKING_HEADERS).concat(['ItemsRaw']);
-        sheet.getRange(1, 1, 1, 11).setValues([headers]); sheet.hideSheet();
+        // Stable stage names bound storage use to two sheets for production and
+        // two for shadow tests, regardless of how many generations run.
+        var sheet = dzPrepareStage_(ss, name, targetPrefix);
         state.sources[name] = { sheetId: sheet.getSheetId(), cursor: 0, received: 0, expected: null, done: false, limit: name === 'Tracking' ? Number(props.getProperty('DZ_TRACKING_BATCH') || CONFIG.TRACKING_LIMIT) : CONFIG.ORDERS_LIMIT };
         props.setProperty('DZ_SYNC_STATE', JSON.stringify(state));
       });
@@ -192,14 +233,22 @@ function dzSyncTick() {
       if (!stage) throw new Error('STAGING_MISSING');
       var limit = progress.limit || (name === 'Orders' ? CONFIG.ORDERS_LIMIT : CONFIG.TRACKING_LIMIT);
       if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error('INVALID_BATCH_LIMIT');
+      var pagesPerWrite = Number(props.getProperty('DZ_STAGE_PAGES_PER_WRITE') || 10);
+      if (!Number.isInteger(pagesPerWrite) || pagesPerWrite < 1 || pagesPerWrite > 20) throw new Error('INVALID_STAGE_PAGES_PER_WRITE');
       var endpoint = name === 'Orders' ? CONFIG.ORDERS_ENDPOINT : CONFIG.TRACKING_ENDPOINT;
       while (!progress.done && Date.now() - start < budgetMs) {
-        var data = apiGet_(endpoint, { offset: progress.cursor, limit: limit });
-        var next = dzPageProgress_(data, progress.cursor, progress.received, limit, mode, progress.expected);
-        var rows = data.data.map(function (item) { return dzMapRow_(name, item); });
-        // Write through the Advanced Sheets API. Repeated insertRows/setValues/flush
-        // calls timed out on the large staging sheets and pinned the same checkpoint.
-        // The deterministic start row still makes a retry overwrite the same page.
+        var rows = [], next = { cursor: progress.cursor, received: progress.received, expected: progress.expected, done: progress.done };
+        var fetchedPages = 0;
+        while (!next.done && fetchedPages < pagesPerWrite && Date.now() - start < budgetMs - 5000) {
+          var data = apiGet_(endpoint, { offset: next.cursor, limit: limit });
+          var page = dzPageProgress_(data, next.cursor, next.received, limit, mode, next.expected);
+          Array.prototype.push.apply(rows, data.data.map(function (item) { return dzMapRow_(name, item); }));
+          next = page;
+          fetchedPages++;
+        }
+        if (!fetchedPages) return;
+        // One Advanced Sheets call persists several source pages. A retry starts at
+        // the last durable chunk, preserving resumability while staying below quota.
         dzWriteStageRows_(ss, stage, progress.received + 1, rows, next.expected);
         Object.keys(next).forEach(function (key) { progress[key] = next[key]; });
         props.setProperty('DZ_SYNC_STATE', JSON.stringify(state));
@@ -212,6 +261,9 @@ function dzSyncTick() {
     props.setProperty('DZ_SYNC_LAST_SUCCESS', JSON.stringify({ generation: state.generation, completedAt: new Date().toISOString() }));
     props.deleteProperty('DZ_SYNC_ERROR');
     props.deleteProperty('DZ_SYNC_STATE');
+    // A migrated active run can still reference generation-specific stage sheets.
+    // Delete them only after their publication completed successfully.
+    dzPruneLegacyStaging_(ss, null);
   } catch (_) {
     var reason = String(_.message || '');
     var codeMatch = reason.match(/^([A-Z_]{2,})(?:\b|:)/);
@@ -259,5 +311,6 @@ function dzPublish_(ss, state) {
   SpreadsheetApp.flush();
   // Google Sheets batchUpdate applies both datasets and generation metadata atomically.
   Sheets.Spreadsheets.batchUpdate({ requests: requests }, ss.getId());
-  // Old staging is intentionally retained for recovery. Review and remove old _dz_ generations after backup.
+  // Stable staging sheets are reset at the start of the next generation. Published
+  // targets remain the durable recovery copy if a later generation is interrupted.
 }

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 const source = readFileSync(new URL('./ResumableSync.gs', import.meta.url), 'utf8');
-function core() { return runInNewContext(source + ';({page: dzPageProgress_, map: dzMapRow_, merge: dzMergeRows_, write: dzWriteStageRows_})', { }); }
+function core() { return runInNewContext(source + ';({page: dzPageProgress_, map: dzMapRow_, merge: dzMergeRows_, write: dzWriteStageRows_, stageName: dzStageName_})', { }); }
 describe('resumable synchronization invariants', () => {
   it('publishes a completed fetch without waiting for the next scheduled trigger', () => {
     expect(source).not.toContain('Date.now() - start > 30000');
@@ -51,7 +51,19 @@ describe('resumable synchronization invariants', () => {
   it('writes staging pages through one Advanced Sheets batch', () => {
     expect(source).toContain('dzWriteStageRows_(ss, stage, progress.received + 1, rows, next.expected)');
     expect(source).not.toContain('stage.insertRowsAfter');
-    expect(source).toContain('Utilities.sleep(1100)');
+    expect(source).not.toContain('Utilities.sleep(1100)');
+    expect(source).toContain('startRowIndex + rows.length');
+    expect(source).not.toContain('Math.max(20000');
+    expect(source).toContain("DZ_STAGE_PAGES_PER_WRITE') || 10");
+    expect(source).toContain('fetchedPages < pagesPerWrite');
+  });
+  it('reuses bounded staging names across generations', () => {
+    const c = core();
+    expect(c.stageName('Orders', '')).toBe('_dz_stage_Orders');
+    expect(c.stageName('Tracking', '_dz_test_')).toBe('_dz_stage_test_Tracking');
+    expect(source).toContain('dzPruneLegacyStaging_(ss, state)');
+    expect(source).toContain('dzPruneLegacyStaging_(ss, null)');
+    expect(source).toContain("DZ_STAGING_MIGRATED') === 'true'");
   });
 });
 
@@ -62,6 +74,7 @@ function harness(timeoutDuringSetup = false) {
   class FakeSheet {
     id = nextId++; rows: unknown[][] = []; maxRows = 1000;
     constructor(public name: string) { sheets.set(this.id, this); }
+    getName() { return this.name; }
     getSheetId() { return this.id; }
     getMaxRows() { return this.maxRows; }
     getMaxColumns() { return 26; }
@@ -78,12 +91,12 @@ function harness(timeoutDuringSetup = false) {
   }
   const ss = { insertSheet: (name: string) => {
     const sheet = new FakeSheet(name);
-    if (timeoutDuringSetup && name.startsWith('_dz_Tracking_')) {
+    if (timeoutDuringSetup && name === '_dz_stage_Tracking') {
       timeoutDuringSetup = false;
       throw new Error('Service Spreadsheets timed out');
     }
     return sheet;
-  }, getSheetById: (id: number) => sheets.get(id), getSheetByName: (name: string) => [...sheets.values()].find(s => s.name === name), getId: () => 'synthetic' };
+  }, getSheetById: (id: number) => sheets.get(id), getSheetByName: (name: string) => [...sheets.values()].find(s => s.name === name), getSheets: () => [...sheets.values()], getId: () => 'synthetic' };
   ss.insertSheet('Orders').rows = [['ID'], [99, 'existing']];
   ss.insertSheet('Tracking').rows = [['ID'], [99, 'existing']];
   let fail = false, slow = true, publications = 0, lastBatch: { requests: Record<string, unknown>[] } | null = null;
@@ -102,6 +115,10 @@ function harness(timeoutDuringSetup = false) {
       return { all_count: 2, data: params.offset >= 2 ? [] : [endpoint === 'orders' ? order : { order }] };
     },
     Sheets: { Spreadsheets: { batchUpdate: (body: { requests: Record<string, unknown>[] }) => {
+      body.requests.forEach(request => {
+        const deletion = request.deleteSheet as { sheetId: number } | undefined;
+        if (deletion) sheets.delete(deletion.sheetId);
+      });
       if (body.requests.some(request => 'copyPaste' in request)) { publications++; lastBatch = body; }
     } } },
   };
@@ -143,7 +160,7 @@ it('reuses a staging sheet created before an uncertain setup timeout', () => {
   expect(before.sources.Tracking).toBeUndefined();
   h.tick();
   expect(JSON.parse(h.properties.DZ_SYNC_STATE).generation).toBe(before.generation);
-  expect([...h.sheets.values()].filter(s => s.name.startsWith('_dz_Tracking_'))).toHaveLength(1);
+  expect([...h.sheets.values()].filter(s => s.name === '_dz_stage_Tracking')).toHaveLength(1);
   expect(h.cursors).toEqual([0]);
   expect(h.publications).toBe(0);
 });

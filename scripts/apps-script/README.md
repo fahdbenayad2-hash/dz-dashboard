@@ -89,11 +89,27 @@ failed on every retry. Stage writes now resize through the Advanced Sheets API a
 cap staging width at the 11 columns actually stored, reclaiming unused grid cells
 without deleting the published data.
 
-Stage writes are paced at 1.1 seconds per page to remain below the Sheets API's
-per-user write-request quota. Checkpoints are saved after each successful page, so
-a quota or network failure resumes at the last durable row.
+Stage writes combine ten Octomatic pages into one Sheets API batch by default. This
+reduces a typical full generation from roughly 430 write requests to about 43 while
+remaining below the per-user write-request quota. The setting
+`DZ_STAGE_PAGES_PER_WRITE` accepts 1–20. Checkpoints are saved after each successful
+batch, so a quota or network failure resumes at the last durable group of rows.
 
 Stage writes also avoid `getMaxRows`, `getMaxColumns`, `insertRowsAfter`, and
 `SpreadsheetApp.flush`; those calls repeatedly timed out once the workbook became
-large. Each Advanced Sheets request keeps the stage at a narrow 20,000-row by
-11-column grid, enough for the observed 9,565 Orders and 16,567 Tracking records.
+large. Each Advanced Sheets request grows the active stage only to its durable
+checkpoint and keeps it at 11 columns.
+
+On 2026-09-12 another production incident exposed unbounded staging retention: each
+hourly generation created two new sheets and reserved 20,000 rows in each one. The
+workbook reached the 10-million-cell limit again, leaving the dashboard at order
+26,410 while Octomatic had reached 26,451. Generations now reuse fixed production
+stages (`_dz_stage_Orders` and `_dz_stage_Tracking`). Obsolete generation-specific
+stages are pruned before fetching, except sheets referenced by an active resumable
+checkpoint; migrated active stages are pruned only after atomic publication. This
+bounds workbook growth while the published Orders, Tracking, and SyncStatus sheets
+remain the durable recovery copy.
+
+The completed migration is recorded once as `DZ_STAGING_MIGRATED=true`. Later hourly
+runs skip the expensive workbook-wide staging scan, which otherwise can time out even
+after obsolete sheets have already been removed.
